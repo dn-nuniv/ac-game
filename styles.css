@@ -317,7 +317,6 @@ header p {
 
 .other-zone-section,
 .history {
-  margin-top: 0.5rem;
   background: white;
   border-radius: 16px;
   padding: 0.9rem 1rem;
@@ -502,5 +501,39 @@ header p {
 
   .history {
     margin-top: 0.75rem;
+  }
+}
+
+/* ===== セクションの縦方向レイアウトをここで一元管理する ===== */
+
+/* B/S・P/L のカードが入っている .board の直後が「その他」 */
+.board + .other-zone-section {
+  margin-top: 0.6rem;   /* ★ P/L と その他の間（PC / タブレット共通） */
+}
+
+/* 「その他」の直後が「回答履歴」 */
+.other-zone-section + .history {
+  margin-top: 1rem;     /* ★ その他 と 履歴の間 */
+}
+
+/* 「その他」「履歴」の見出しの上側マージンを抑える */
+.other-zone-section h2,
+.history h2 {
+  margin: 0 0 0.35rem;
+}
+
+/* スマホ幅（600px 以下）のときは少しだけ詰める */
+@media (max-width: 600px) {
+  .board + .other-zone-section {
+    margin-top: 0.4rem;   /* スマホではもう少しだけ近づける */
+  }
+
+  .other-zone-section + .history {
+    margin-top: 0.75rem;  /* その他→履歴は今までに近い感覚 */
+  }
+
+  .other-zone-section h2,
+  .history h2 {
+    margin: 0 0 0.25rem;  /* 見出し周りもさらにキュッと */
   }
 }
