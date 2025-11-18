@@ -24,6 +24,15 @@
         <button type="submit" id="start-button" disabled>10問スタート</button>
       </form>
       <button id="export-button" type="button" disabled>回答ログをCSVで保存</button>
+      <div id="csv-fallback" class="csv-fallback" hidden>
+        <p id="csv-hint">
+          ローカルファイルとして開いている場合は、下のボタンで <strong>accounts.csv</strong> を選択してください。
+        </p>
+        <button id="local-csv-button" type="button" class="ghost-button">
+          accounts.csvを選択
+        </button>
+        <input type="file" id="local-csv-input" accept=".csv,text/csv" hidden />
+      </div>
     </section>
 
     <section class="status-bar" aria-live="polite">
@@ -99,13 +108,6 @@
     </li>
   </template>
 
-  <iframe
-    id="accounts-fallback"
-    src="accounts.csv"
-    title="勘定科目CSV"
-    class="csv-preload"
-    tabindex="-1"
-  ></iframe>
   <script src="script.js"></script>
 </body>
 </html>

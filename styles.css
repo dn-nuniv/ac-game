@@ -60,7 +60,8 @@ header p {
 
 #start-button,
 #skip-button,
-#export-button {
+#export-button,
+.ghost-button {
   border: none;
   border-radius: 999px;
   padding: 0.75rem 1.5rem;
@@ -88,6 +89,30 @@ header p {
 #export-button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.ghost-button {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.ghost-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.csv-fallback {
+  flex-basis: 100%;
+  background: #fff7ed;
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+  border: 1px dashed #fb923c;
+}
+
+.csv-fallback p {
+  margin: 0 0 0.5rem;
+  color: #9a3412;
+  font-weight: 600;
 }
 
 .status-bar {
@@ -309,15 +334,6 @@ header p {
 
 .history-result.skipped {
   color: #f97316;
-}
-
-.csv-preload {
-  position: absolute;
-  width: 0;
-  height: 0;
-  border: 0;
-  opacity: 0;
-  pointer-events: none;
 }
 
 @media (max-width: 768px) {

@@ -23,6 +23,9 @@ const gradeSelect = document.getElementById("grade-select");
 const startButton = document.getElementById("start-button");
 const activeGradeEl = document.getElementById("active-grade");
 const exportButton = document.getElementById("export-button");
+const csvFallbackSection = document.getElementById("csv-fallback");
+const localCsvButton = document.getElementById("local-csv-button");
+const localCsvInput = document.getElementById("local-csv-input");
 
 let allAccounts = [];
 let queue = [];
@@ -54,68 +57,83 @@ function parseCSV(text) {
     .filter((row) => row.grade && row.name && row.type);
 }
 
-function loadAccountsFromIframe() {
-  return new Promise((resolve, reject) => {
-    const iframe = document.getElementById("accounts-fallback");
-    if (!iframe) {
-      reject(new Error("CSVファイルが見つかりませんでした"));
-      return;
-    }
-
-    const readFromIframe = () => {
-      try {
-        const doc = iframe.contentDocument || iframe.contentWindow?.document;
-        const bodyText = doc?.body?.innerText || "";
-        const parsed = parseCSV(bodyText);
-        resolve(parsed);
-      } catch (err) {
-        reject(new Error("CSVの読み込みに失敗しました"));
-      }
-    };
-
-    if (iframe.contentDocument?.readyState === "complete") {
-      readFromIframe();
-    } else {
-      iframe.addEventListener("load", readFromIframe, { once: true });
-      iframe.addEventListener(
-        "error",
-        () => reject(new Error("CSVの読み込みに失敗しました")),
-        { once: true }
-      );
-    }
-  });
+function escapeCsvValue(value) {
+  const safe = String(value ?? "");
+  return `"${safe.replace(/"/g, '""')}"`;
 }
 
-async function loadAccounts() {
-  try {
-    const response = await fetch("accounts.csv");
-    if (!response.ok) throw new Error("CSVの読み込みに失敗しました");
-    const text = await response.text();
-    allAccounts = parseCSV(text);
-  } catch (error) {
-    if (window.location.protocol === "file:") {
-      try {
-        allAccounts = await loadAccountsFromIframe();
-      } catch (fallbackError) {
-        feedbackEl.textContent = `${fallbackError.message}。ファイルを確認してください。`;
-        startButton.disabled = true;
-        return;
-      }
-    } else {
-      feedbackEl.textContent = `${error.message}。ファイルを確認してください。`;
-      startButton.disabled = true;
-      return;
-    }
-  }
+function hideCsvFallback() {
+  if (!csvFallbackSection) return;
+  csvFallbackSection.hidden = true;
+  if (localCsvButton) localCsvButton.disabled = false;
+  if (localCsvInput) localCsvInput.value = "";
+}
 
+function showCsvFallback() {
+  if (!csvFallbackSection) return;
+  csvFallbackSection.hidden = false;
+  if (localCsvButton) localCsvButton.disabled = false;
+}
+
+function handleAccountsLoaded(accounts, sourceMessage = "") {
+  allAccounts = accounts;
   if (allAccounts.length === 0) {
     feedbackEl.textContent = "CSVに勘定科目が見つかりませんでした。";
     startButton.disabled = true;
     return;
   }
 
-  feedbackEl.textContent = "挑戦する級を選び、スタートを押してください";
+  hideCsvFallback();
+  feedbackEl.textContent = `${sourceMessage}挑戦する級を選び、スタートを押してください`;
   startButton.disabled = false;
+}
+
+function parseCsvFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const text = reader.result;
+        if (typeof text !== "string") {
+          reject(new Error("CSVを文字列として読み込めませんでした"));
+          return;
+        }
+        resolve(parseCSV(text));
+      } catch (err) {
+        reject(new Error("CSVの解析に失敗しました"));
+      }
+    };
+    reader.onerror = () => reject(new Error("CSVの読み込みに失敗しました"));
+    reader.readAsText(file, "utf-8");
+  });
+}
+
+async function handleLocalCsvSelection(file) {
+  try {
+    const parsed = await parseCsvFile(file);
+    handleAccountsLoaded(parsed, `${file.name}を読み込みました。`);
+  } catch (error) {
+    feedbackEl.textContent = `${error.message}。別のCSVを選択してください。`;
+    startButton.disabled = true;
+  }
+}
+
+async function loadAccounts() {
+  try {
+    const response = await fetch("accounts.csv", { cache: "no-store" });
+    if (!response.ok) throw new Error("CSVの読み込みに失敗しました");
+    const text = await response.text();
+    handleAccountsLoaded(parseCSV(text), "CSVを読み込みました。");
+  } catch (error) {
+    startButton.disabled = true;
+    if (window.location.protocol === "file:") {
+      showCsvFallback();
+      feedbackEl.textContent =
+        "ブラウザの制限で自動読み込みができません。下のボタンからaccounts.csvを読み込んでください。";
+    } else {
+      feedbackEl.textContent = `${error.message}。ファイルを確認してください。`;
+    }
+  }
 }
 
 function setBoardEnabled(enabled) {
@@ -285,6 +303,19 @@ dropZones.forEach((zone) => {
   });
 });
 
+if (localCsvButton && localCsvInput) {
+  localCsvButton.addEventListener("click", () => {
+    localCsvInput.click();
+  });
+
+  localCsvInput.addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    handleLocalCsvSelection(file);
+  });
+}
+
 gradeForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const selectedGrade = gradeSelect.value;
@@ -304,15 +335,16 @@ exportButton.addEventListener("click", () => {
       entry.chosenType,
       entry.result,
     ]
-      .map((value) => `"${value ?? ""}"`)
+      .map(escapeCsvValue)
       .join(",")
   );
-  const csvContent = [header, ...rows].join("\n");
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const csvContent = [header, ...rows].join("\r\n");
+  const blob = new Blob(["\ufeff", csvContent], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `answers-${new Date().toISOString()}.csv`;
+  const timestamp = new Date().toISOString().replace(/[:]/g, "-").replace(/\./g, "-");
+  link.download = `answers-${timestamp}.csv`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
