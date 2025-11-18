@@ -5,37 +5,10 @@ const TYPE_LABELS = {
   revenue: "収益",
   expense: "費用",
   other: "その他",
+  skip: "スキップ",
 };
 
-const ACCOUNT_POOL = [
-  { name: "現金", type: "asset" },
-  { name: "普通預金", type: "asset" },
-  { name: "売掛金", type: "asset" },
-  { name: "棚卸資産", type: "asset" },
-  { name: "建物", type: "asset" },
-  { name: "備品", type: "asset" },
-  { name: "未収収益", type: "asset" },
-  { name: "借入金", type: "liability" },
-  { name: "買掛金", type: "liability" },
-  { name: "未払金", type: "liability" },
-  { name: "未払費用", type: "liability" },
-  { name: "社債", type: "liability" },
-  { name: "資本金", type: "equity" },
-  { name: "利益剰余金", type: "equity" },
-  { name: "自己株式", type: "equity" },
-  { name: "売上高", type: "revenue" },
-  { name: "受取利息", type: "revenue" },
-  { name: "雑収入", type: "revenue" },
-  { name: "仕入", type: "expense" },
-  { name: "給料", type: "expense" },
-  { name: "支払利息", type: "expense" },
-  { name: "減価償却費", type: "expense" },
-  { name: "旅費交通費", type: "expense" },
-  { name: "雑損失", type: "expense" },
-  { name: "仮受金", type: "other" },
-  { name: "仮払金", type: "other" },
-  { name: "差入保証金", type: "other" },
-];
+const TOTAL_QUESTIONS = 10;
 
 const cardEl = document.getElementById("account-card");
 const questionCountEl = document.getElementById("question-count");
@@ -45,12 +18,20 @@ const historyListEl = document.getElementById("history-list");
 const historyTemplate = document.getElementById("history-item-template");
 const skipButton = document.getElementById("skip-button");
 const dropZones = document.querySelectorAll(".drop-zone");
+const gradeForm = document.getElementById("grade-form");
+const gradeSelect = document.getElementById("grade-select");
+const startButton = document.getElementById("start-button");
+const activeGradeEl = document.getElementById("active-grade");
+const exportButton = document.getElementById("export-button");
 
+let allAccounts = [];
 let queue = [];
 let currentAccount = null;
 let totalCount = 0;
 let correctCount = 0;
 let locked = false;
+let activeGrade = null;
+let answersLog = [];
 
 function shuffle(array) {
   const clone = [...array];
@@ -61,22 +42,65 @@ function shuffle(array) {
   return clone;
 }
 
+function parseCSV(text) {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .slice(1)
+    .map((line) => {
+      const [grade, name, type] = line.split(",").map((value) => value.trim());
+      return { grade, name, type };
+    })
+    .filter((row) => row.grade && row.name && row.type);
+}
+
+async function loadAccounts() {
+  try {
+    const response = await fetch("accounts.csv");
+    if (!response.ok) throw new Error("CSVの読み込みに失敗しました");
+    const text = await response.text();
+    allAccounts = parseCSV(text);
+    if (allAccounts.length === 0) {
+      throw new Error("CSVに勘定科目が見つかりませんでした");
+    }
+    feedbackEl.textContent = "挑戦する級を選び、スタートを押してください";
+    startButton.disabled = false;
+  } catch (error) {
+    feedbackEl.textContent = `${error.message}。ファイルを確認してください。`;
+    startButton.disabled = true;
+  }
+}
+
+function setBoardEnabled(enabled) {
+  dropZones.forEach((zone) => {
+    zone.tabIndex = enabled ? 0 : -1;
+    zone.classList.toggle("disabled", !enabled);
+  });
+  skipButton.disabled = !enabled;
+}
+
+function resetGameState() {
+  queue = [];
+  currentAccount = null;
+  totalCount = 0;
+  correctCount = 0;
+  locked = false;
+  cardEl.textContent = "---";
+  questionCountEl.textContent = "0";
+  correctCountEl.textContent = "0";
+  historyListEl.innerHTML = "";
+  activeGradeEl.textContent = "-";
+  setBoardEnabled(false);
+}
+
 function nextAccount() {
   if (queue.length === 0) {
-    currentAccount = null;
-    cardEl.textContent = "お疲れさま！";
-    cardEl.setAttribute("draggable", "false");
-    feedbackEl.textContent = "全問終了。ページを再読み込みすると再挑戦できます。";
-    skipButton.disabled = true;
+    finishGame();
     return;
   }
 
   currentAccount = queue.shift();
   cardEl.textContent = currentAccount.name;
-  cardEl.dataset.type = currentAccount.type;
-  cardEl.setAttribute("draggable", "true");
-  cardEl.setAttribute("aria-grabbed", "false");
-  skipButton.disabled = false;
   locked = false;
 }
 
@@ -86,12 +110,15 @@ function updateHistory(chosenType, isCorrect) {
   const resultEl = fragment.querySelector(".history-result");
 
   accountEl.textContent = currentAccount.name;
-  const chosenLabel = TYPE_LABELS[chosenType] || "スキップ";
+  const chosenLabel = TYPE_LABELS[chosenType] || chosenType;
   const correctLabel = TYPE_LABELS[currentAccount.type];
 
   if (isCorrect) {
     resultEl.textContent = `◎ ${correctLabel}`;
     resultEl.classList.add("correct");
+  } else if (chosenType === "skip") {
+    resultEl.textContent = `→ 正: ${correctLabel}`;
+    resultEl.classList.add("skipped");
   } else {
     resultEl.textContent = `× ${chosenLabel} → 正: ${correctLabel}`;
     resultEl.classList.add("wrong");
@@ -100,6 +127,21 @@ function updateHistory(chosenType, isCorrect) {
   historyListEl.prepend(fragment);
   while (historyListEl.children.length > 10) {
     historyListEl.removeChild(historyListEl.lastChild);
+  }
+}
+
+function logAnswer(chosenType, isCorrect) {
+  answersLog.push({
+    timestamp: new Date().toISOString(),
+    grade: activeGrade,
+    questionNumber: totalCount,
+    account: currentAccount.name,
+    correctType: currentAccount.type,
+    chosenType,
+    result: isCorrect ? "correct" : chosenType === "skip" ? "skipped" : "wrong",
+  });
+  if (answersLog.length > 0) {
+    exportButton.disabled = false;
   }
 }
 
@@ -120,6 +162,7 @@ function evaluateAnswer(selectedType, zone = null) {
     feedbackEl.textContent = `残念！「${currentAccount.name}」は${TYPE_LABELS[currentAccount.type]}です。`;
   }
 
+  logAnswer(selectedType, isCorrect);
   updateHistory(selectedType, isCorrect);
 
   if (zone) {
@@ -131,65 +174,103 @@ function evaluateAnswer(selectedType, zone = null) {
       zone.classList.remove("correct", "wrong");
     }
     nextAccount();
-  }, 1000);
+  }, 800);
 }
 
-cardEl.addEventListener("dragstart", (event) => {
-  if (!currentAccount || locked) {
-    event.preventDefault();
+function finishGame() {
+  feedbackEl.textContent = `お疲れさまでした！${activeGrade}の${TOTAL_QUESTIONS}問が終了しました。`;
+  cardEl.textContent = "終了";
+  skipButton.disabled = true;
+  setBoardEnabled(false);
+  currentAccount = null;
+  activeGrade = null;
+  activeGradeEl.textContent = "-";
+}
+
+function startGame(selectedGrade) {
+  if (allAccounts.length === 0) return;
+  const pool = allAccounts.filter((item) => item.grade === selectedGrade);
+  if (pool.length < TOTAL_QUESTIONS) {
+    feedbackEl.textContent = `${selectedGrade}の問題が足りません（${pool.length}件）。CSVを増やしてください。`;
     return;
   }
-  event.dataTransfer.setData("text/plain", currentAccount.name);
-  cardEl.classList.add("dragging");
-  cardEl.setAttribute("aria-grabbed", "true");
-});
 
-cardEl.addEventListener("dragend", () => {
-  cardEl.classList.remove("dragging");
-  cardEl.setAttribute("aria-grabbed", "false");
-});
+  answersLog = [];
+  queue = shuffle(pool).slice(0, TOTAL_QUESTIONS);
+  totalCount = 0;
+  correctCount = 0;
+  locked = false;
+  currentAccount = null;
+  activeGrade = selectedGrade;
+  questionCountEl.textContent = "0";
+  correctCountEl.textContent = "0";
+  historyListEl.innerHTML = "";
+  activeGradeEl.textContent = selectedGrade;
+  feedbackEl.textContent = `${selectedGrade}を開始しました。タップで回答してください。`;
+  setBoardEnabled(true);
+  skipButton.disabled = false;
+  exportButton.disabled = true;
+  nextAccount();
+}
 
 skipButton.addEventListener("click", () => {
   if (!currentAccount || locked) return;
   skipButton.disabled = true;
   evaluateAnswer("skip");
+  setTimeout(() => {
+    if (currentAccount) {
+      skipButton.disabled = false;
+    }
+  }, 850);
 });
 
+function handleZoneSelect(event) {
+  if (!currentAccount || locked) return;
+  evaluateAnswer(event.currentTarget.dataset.type, event.currentTarget);
+}
+
 dropZones.forEach((zone) => {
-  zone.addEventListener("dragover", (event) => {
-    if (!currentAccount || locked) return;
-    event.preventDefault();
-    zone.classList.add("accepting");
-  });
-
-  zone.addEventListener("dragleave", () => {
-    zone.classList.remove("accepting");
-  });
-
-  zone.addEventListener("drop", (event) => {
-    if (!currentAccount || locked) return;
-    event.preventDefault();
-    zone.classList.remove("accepting");
-    evaluateAnswer(zone.dataset.type, zone);
-  });
-
+  zone.addEventListener("click", handleZoneSelect);
   zone.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
-    if (!currentAccount || locked) return;
-    evaluateAnswer(zone.dataset.type, zone);
+    handleZoneSelect(event);
   });
 });
 
-function init() {
-  queue = shuffle(ACCOUNT_POOL);
-  totalCount = 0;
-  correctCount = 0;
-  questionCountEl.textContent = "0";
-  correctCountEl.textContent = "0";
-  historyListEl.innerHTML = "";
-  feedbackEl.textContent = "ドラッグしてスタート！";
-  nextAccount();
-}
+gradeForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const selectedGrade = gradeSelect.value;
+  startGame(selectedGrade);
+});
 
-init();
+exportButton.addEventListener("click", () => {
+  if (answersLog.length === 0) return;
+  const header = "timestamp,grade,question,account,correct_type,chosen_type,result";
+  const rows = answersLog.map((entry) =>
+    [
+      entry.timestamp,
+      entry.grade,
+      entry.questionNumber,
+      entry.account,
+      entry.correctType,
+      entry.chosenType,
+      entry.result,
+    ]
+      .map((value) => `"${value ?? ""}"`)
+      .join(",")
+  );
+  const csvContent = [header, ...rows].join("\n");
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `answers-${new Date().toISOString()}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+});
+
+resetGameState();
+loadAccounts();
