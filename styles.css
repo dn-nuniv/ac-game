@@ -503,24 +503,3 @@ header p {
     margin-top: 0.75rem;
   }
 }
-
-/* ===== 余白の最終調整（追記用） ===== */
-
-/* 「その他」カード内の見出しの上マージンを消す（カードの中だけ少し空ける） */
-.other-zone-section h2 {
-  margin: 0 0 0.35rem;
-}
-
-/* PC 幅のとき：P/L と その他の間を 0.5rem に固定 */
-@media (min-width: 769px) {
-  .other-zone-section {
-    margin-top: 0.5rem !important;
-  }
-}
-
-/* スマホ幅のとき：P/L と その他の間を 0.3rem に固定 */
-@media (max-width: 768px) {
-  .other-zone-section {
-    margin-top: 0.3rem !important;
-  }
-}
