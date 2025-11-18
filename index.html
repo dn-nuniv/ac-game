@@ -30,17 +30,19 @@
         <div class="t-account">
           <h2>B/S</h2>
           <div class="t-body bs">
+            <span class="t-label t-label-debit" aria-hidden="true">借方</span>
+            <span class="t-label t-label-credit" aria-hidden="true">貸方</span>
             <div class="drop-zone" data-type="asset" tabindex="0">
-              <h3>借方：資産</h3>
+              <h3>資産</h3>
               <p>Assets (Debit)</p>
             </div>
             <div class="bs-credit">
               <div class="drop-zone" data-type="liability" tabindex="0">
-                <h3>貸方上段：負債</h3>
+                <h3>負債</h3>
                 <p>Liabilities</p>
               </div>
               <div class="drop-zone" data-type="equity" tabindex="0">
-                <h3>貸方下段：純資産</h3>
+                <h3>純資産</h3>
                 <p>Equity</p>
               </div>
             </div>
@@ -49,12 +51,14 @@
         <div class="t-account">
           <h2>P/L</h2>
           <div class="t-body pl">
+            <span class="t-label t-label-debit" aria-hidden="true">借方</span>
+            <span class="t-label t-label-credit" aria-hidden="true">貸方</span>
             <div class="drop-zone" data-type="expense" tabindex="0">
-              <h3>借方：費用</h3>
+              <h3>費用</h3>
               <p>Expenses (Debit)</p>
             </div>
             <div class="drop-zone" data-type="revenue" tabindex="0">
-              <h3>貸方：収益</h3>
+              <h3>収益</h3>
               <p>Revenue (Credit)</p>
             </div>
           </div>
@@ -83,6 +87,6 @@
     </li>
   </template>
 
-  <script src="script.js" type="module"></script>
+  <script src="script.js"></script>
 </body>
 </html>
