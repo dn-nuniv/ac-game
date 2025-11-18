@@ -54,21 +54,68 @@ function parseCSV(text) {
     .filter((row) => row.grade && row.name && row.type);
 }
 
+function loadAccountsFromIframe() {
+  return new Promise((resolve, reject) => {
+    const iframe = document.getElementById("accounts-fallback");
+    if (!iframe) {
+      reject(new Error("CSVファイルが見つかりませんでした"));
+      return;
+    }
+
+    const readFromIframe = () => {
+      try {
+        const doc = iframe.contentDocument || iframe.contentWindow?.document;
+        const bodyText = doc?.body?.innerText || "";
+        const parsed = parseCSV(bodyText);
+        resolve(parsed);
+      } catch (err) {
+        reject(new Error("CSVの読み込みに失敗しました"));
+      }
+    };
+
+    if (iframe.contentDocument?.readyState === "complete") {
+      readFromIframe();
+    } else {
+      iframe.addEventListener("load", readFromIframe, { once: true });
+      iframe.addEventListener(
+        "error",
+        () => reject(new Error("CSVの読み込みに失敗しました")),
+        { once: true }
+      );
+    }
+  });
+}
+
 async function loadAccounts() {
   try {
     const response = await fetch("accounts.csv");
     if (!response.ok) throw new Error("CSVの読み込みに失敗しました");
     const text = await response.text();
     allAccounts = parseCSV(text);
-    if (allAccounts.length === 0) {
-      throw new Error("CSVに勘定科目が見つかりませんでした");
-    }
-    feedbackEl.textContent = "挑戦する級を選び、スタートを押してください";
-    startButton.disabled = false;
   } catch (error) {
-    feedbackEl.textContent = `${error.message}。ファイルを確認してください。`;
-    startButton.disabled = true;
+    if (window.location.protocol === "file:") {
+      try {
+        allAccounts = await loadAccountsFromIframe();
+      } catch (fallbackError) {
+        feedbackEl.textContent = `${fallbackError.message}。ファイルを確認してください。`;
+        startButton.disabled = true;
+        return;
+      }
+    } else {
+      feedbackEl.textContent = `${error.message}。ファイルを確認してください。`;
+      startButton.disabled = true;
+      return;
+    }
   }
+
+  if (allAccounts.length === 0) {
+    feedbackEl.textContent = "CSVに勘定科目が見つかりませんでした。";
+    startButton.disabled = true;
+    return;
+  }
+
+  feedbackEl.textContent = "挑戦する級を選び、スタートを押してください";
+  startButton.disabled = false;
 }
 
 function setBoardEnabled(enabled) {

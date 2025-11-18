@@ -311,6 +311,15 @@ header p {
   color: #f97316;
 }
 
+.csv-preload {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
 @media (max-width: 768px) {
   .status-bar {
     flex-direction: column;
