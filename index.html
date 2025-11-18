@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>仕訳分類トレーナー</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>簿記T勘定ドラッグ＆ドロップ</h1>
+      <p>表示された勘定科目を正しい区分（資産 / 負債 / 純資産 / 収益 / 費用 / その他）にドラッグ＆ドロップして仕訳感覚を鍛えよう。</p>
+    </header>
+
+    <section class="status-bar" aria-live="polite">
+      <div>出題: <span id="question-count">0</span></div>
+      <div>正解: <span id="correct-count">0</span></div>
+      <div id="feedback" class="feedback">ドラッグしてスタート！</div>
+    </section>
+
+    <section class="board">
+      <div class="card-area">
+        <p class="card-label">現在の勘定科目</p>
+        <div id="account-card" class="account-card" draggable="true" aria-grabbed="false">---</div>
+        <button id="skip-button" type="button">わからない（スキップ）</button>
+      </div>
+
+      <div class="t-accounts">
+        <div class="t-account">
+          <h2>B/S</h2>
+          <div class="t-body bs">
+            <div class="drop-zone" data-type="asset" tabindex="0">
+              <h3>借方：資産</h3>
+              <p>Assets (Debit)</p>
+            </div>
+            <div class="bs-credit">
+              <div class="drop-zone" data-type="liability" tabindex="0">
+                <h3>貸方上段：負債</h3>
+                <p>Liabilities</p>
+              </div>
+              <div class="drop-zone" data-type="equity" tabindex="0">
+                <h3>貸方下段：純資産</h3>
+                <p>Equity</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="t-account">
+          <h2>P/L</h2>
+          <div class="t-body pl">
+            <div class="drop-zone" data-type="expense" tabindex="0">
+              <h3>借方：費用</h3>
+              <p>Expenses (Debit)</p>
+            </div>
+            <div class="drop-zone" data-type="revenue" tabindex="0">
+              <h3>貸方：収益</h3>
+              <p>Revenue (Credit)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="other-zone-section">
+      <h2>その他（枠外）</h2>
+      <div class="drop-zone" data-type="other" tabindex="0">
+        <h3>その他</h3>
+        <p>Outside categories</p>
+      </div>
+    </section>
+
+    <section class="history" aria-live="polite">
+      <h2>回答履歴</h2>
+      <ul id="history-list"></ul>
+    </section>
+  </main>
+
+  <template id="history-item-template">
+    <li>
+      <span class="history-account"></span>
+      <span class="history-result"></span>
+    </li>
+  </template>
+
+  <script src="script.js" type="module"></script>
+</body>
+</html>
