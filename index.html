@@ -2,126 +2,141 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>仕訳分類トレーナー</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>仕訳分類ゲーム</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
   <main class="app">
     <header>
       <h1>勘定科目分類ゲーム</h1>
-      <p>挑戦する級を選び、表示された勘定科目をタップで分類しましょう。</p>
     </header>
 
     <section class="control-panel">
-      <form id="grade-form">
-        <label for="grade-select">挑戦する級</label>
-        <select id="grade-select" required>
-          <option value="3級" selected>3級</option>
-          <option value="2級">2級</option>
-        </select>
-      </form>
-      <div class="start-buttons" aria-label="出題数を選んで開始">
-        <button type="button" class="start-button" data-count="10" disabled>10問スタート</button>
-        <button type="button" class="start-button" data-count="20" disabled>20問スタート</button>
-        <button type="button" class="start-button" data-count="30" disabled>30問スタート</button>
+      <div class="panel-inner">
+        <form id="grade-form">
+          <label for="grade-select">級を選択</label>
+          <select id="grade-select" required>
+            <option value="3級" selected>3級</option>
+            <option value="2級">2級</option>
+          </select>
+        </form>
+        <div class="start-buttons">
+          <button type="button" class="start-button push-btn" data-count="10" disabled>10問</button>
+          <button type="button" class="start-button push-btn" data-count="20" disabled>20問</button>
+          <button type="button" class="start-button push-btn" data-count="30" disabled>30問</button>
+        </div>
       </div>
-      <button id="export-button" type="button" disabled>回答ログをCSVで保存</button>
+      <div class="sub-controls">
+        <button id="export-button" type="button" class="sm-btn" disabled>ログ保存</button>
+      </div>
       <div id="csv-fallback" class="csv-fallback" hidden>
-        <p id="csv-hint">
-          ローカルファイルとして開いている場合は、下のボタンで <strong>accounts.csv</strong> を選択してください。
-        </p>
-        <button id="local-csv-button" type="button" class="ghost-button">
-          accounts.csvを選択
-        </button>
+        <p class="fallback-msg">自動読み込みできませんでした<br><small>(ファイルを選択してください)</small></p>
+        <button id="local-csv-button" type="button" class="ghost-button">CSVを選択</button>
         <input type="file" id="local-csv-input" accept=".csv,text/csv" hidden />
       </div>
     </section>
 
-    <section class="status-bar" aria-live="polite">
-      <div>挑戦中: <span id="active-grade">-</span></div>
-      <div>出題: <span id="question-count">0</span> / <span id="question-target">0</span></div>
-      <div>正解: <span id="correct-count">0</span></div>
-      <div>経過時間: <span id="timer-display">00:00</span></div>
-      <div id="feedback" class="feedback">級と出題数を選んでスタートしてください</div>
-    </section>
+    <div class="game-board-wrapper">
+      <section class="status-bar">
+        <div class="status-item">残り <span id="question-count">0</span>/<span id="question-target">0</span></div>
+        <div class="status-item timer">⏰ <span id="timer-display">00:00</span></div>
+        <div class="status-item score">正解 <span id="correct-count">0</span></div>
+      </section>
+      
+      <div id="feedback" class="feedback-toast">スタートボタンを押してね！</div>
 
-    <section class="board">
-      <div class="card-area">
-        <p class="card-label">現在の勘定科目</p>
-        <div id="account-card" class="account-card" aria-live="polite">---</div>
-        <button id="skip-button" type="button" disabled>わからない（スキップ）</button>
-      </div>
-
-      <div class="t-accounts">
-        <div class="t-account">
-          <div class="t-heading" aria-hidden="true">
-            <span class="t-heading-side">借方</span>
-            <h2>B/S</h2>
-            <span class="t-heading-side">貸方</span>
-          </div>
-          <div class="t-body bs">
-            <div class="drop-zone" data-type="asset" tabindex="0">
-              <h3>資産</h3>
-            </div>
-            <div class="bs-credit">
-              <div class="drop-zone" data-type="liability" tabindex="0">
-                <h3>負債</h3>
-              </div>
-              <div class="drop-zone" data-type="equity" tabindex="0">
-                <h3>純資産</h3>
-              </div>
-            </div>
-          </div>
+      <section class="board">
+        <div class="card-area">
+          <div id="account-card" class="account-card pop-in">---</div>
+          <button id="skip-button" type="button" class="skip-btn" disabled>パス</button>
         </div>
-        <div class="t-account">
-          <div class="t-heading" aria-hidden="true">
-            <span class="t-heading-side">借方</span>
-            <h2>P/L</h2>
-            <span class="t-heading-side">貸方</span>
-          </div>
-          <div class="t-body pl">
-            <div class="drop-zone" data-type="expense" tabindex="0">
-              <h3>費用</h3>
+
+        <div class="t-forms-container">
+          
+          <div class="t-account bs-account">
+            <div class="t-header">
+              <span class="side-label">借方</span>
+              <h2>貸借対照表 (B/S)</h2>
+              <span class="side-label">貸方</span>
             </div>
-            <div class="drop-zone" data-type="revenue" tabindex="0">
-              <h3>収益</h3>
+            <div class="t-body">
+              <div class="t-col t-left">
+                <div class="drop-zone type-asset push-btn" data-type="asset" tabindex="0">
+                  <h3>資産</h3>
+                </div>
+              </div>
+              <div class="t-divider"></div>
+              <div class="t-col t-right">
+                <div class="drop-zone type-liability push-btn" data-type="liability" tabindex="0">
+                  <h3>負債</h3>
+                </div>
+                <div class="drop-zone type-equity push-btn" data-type="equity" tabindex="0">
+                  <h3>純資産</h3>
+                </div>
+              </div>
             </div>
           </div>
+
+          <div class="t-account pl-account">
+            <div class="t-header">
+              <span class="side-label">借方</span>
+              <h2>損益計算書 (P/L)</h2>
+              <span class="side-label">貸方</span>
+            </div>
+            <div class="t-body">
+              <div class="t-col t-left">
+                <div class="drop-zone type-expense push-btn" data-type="expense" tabindex="0">
+                  <h3>費用</h3>
+                </div>
+              </div>
+              <div class="t-divider"></div>
+              <div class="t-col t-right">
+                <div class="drop-zone type-revenue push-btn" data-type="revenue" tabindex="0">
+                  <h3>収益</h3>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="other-zone-wrapper">
+             <div class="drop-zone type-other push-btn" data-type="other" tabindex="0">
+              <h3>その他</h3>
+            </div>
+          </div>
+
         </div>
-      </div>
-    </section>
+      </section>
+    </div>
 
-    <section class="other-zone-section">
-      <h2>その他</h2>
-      <div class="drop-zone" data-type="other" tabindex="0">
-        <h3>その他</h3>
-      </div>
-    </section>
-
-    <section class="history" aria-live="polite">
-      <h2>回答履歴</h2>
+    <section class="history">
+      <h2>📜 回答履歴</h2>
       <ul id="history-list"></ul>
     </section>
   </main>
 
   <template id="history-item-template">
-    <li>
+    <li class="pop-in-sm">
       <span class="history-account"></span>
       <span class="history-result"></span>
     </li>
   </template>
 
   <div id="result-overlay" class="result-overlay" hidden>
-    <div class="result-card" role="alertdialog" aria-live="assertive" aria-modal="true" aria-label="結果">
-      <h2>結果</h2>
+    <div class="result-card">
+      <h2>🎉 FINISH!</h2>
       <p id="result-message">---</p>
-      <p id="result-score">---</p>
+      <div class="score-box">
+        <p id="result-score" class="big-score">---</p>
+      </div>
       <p id="result-time">---</p>
-      <p id="result-breakdown">---</p>
+      <p id="result-breakdown" class="breakdown">---</p>
       <div class="result-actions">
         <button type="button" id="result-close" class="ghost-button">閉じる</button>
-        <button type="button" id="result-retry" class="primary-button">もう一度挑戦する</button>
+        <button type="button" id="result-retry" class="primary-button push-btn">もう一度！</button>
       </div>
     </div>
   </div>
