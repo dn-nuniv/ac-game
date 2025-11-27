@@ -27,6 +27,10 @@ const TYPE_LABELS = {
   const localCsvButton = document.getElementById("local-csv-button");
   const localCsvInput = document.getElementById("local-csv-input");
   
+  // カウントダウン要素
+  const countdownOverlay = document.getElementById("countdown-overlay");
+  const countdownNumberEl = countdownOverlay ? countdownOverlay.querySelector(".countdown-number") : null;
+
   // 結果画面
   const resultOverlay = document.getElementById("result-overlay");
   const resultMessageEl = document.getElementById("result-message");
@@ -35,6 +39,8 @@ const TYPE_LABELS = {
   const resultBreakdownEl = document.getElementById("result-breakdown");
   const resultCloseButton = document.getElementById("result-close");
   const resultRetryButton = document.getElementById("result-retry");
+  const wrongAnswersSection = document.getElementById("wrong-answers-section");
+  const wrongAnswersList = document.getElementById("wrong-answers-list");
   
   // 状態管理
   let allAccounts = [];
@@ -265,6 +271,35 @@ const TYPE_LABELS = {
     }, 700);
   }
   
+  function startCountdown(onComplete) {
+    if (!countdownOverlay || !countdownNumberEl) {
+      onComplete();
+      return;
+    }
+    
+    countdownOverlay.hidden = false;
+    let count = 3;
+    countdownNumberEl.textContent = count;
+    
+    const interval = setInterval(() => {
+      count--;
+      if (count > 0) {
+        countdownNumberEl.textContent = count;
+        // アニメーションリセット
+        countdownNumberEl.style.animation = 'none';
+        void countdownNumberEl.offsetWidth;
+        countdownNumberEl.style.animation = 'popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)';
+      } else {
+        clearInterval(interval);
+        countdownNumberEl.textContent = "START!";
+        setTimeout(() => {
+          countdownOverlay.hidden = true;
+          onComplete();
+        }, 800);
+      }
+    }, 1000);
+  }
+
   function startGame(selectedGrade, questionCount) {
     if (allAccounts.length === 0) return;
     const pool = allAccounts.filter((item) => item.grade === selectedGrade);
@@ -289,13 +324,18 @@ const TYPE_LABELS = {
     
     historyListEl.innerHTML = "";
     
-    updateFeedback(`🏁 ${selectedGrade}チャレンジ！スタート！`, "info");
-    setBoardEnabled(true);
+    updateFeedback(`準備中...`, "neutral");
+    setBoardEnabled(false); // カウントダウン中は操作不可
     if (exportButton) exportButton.disabled = true;
-    
     hideResultSummary();
-    startTimer();
-    setTimeout(nextAccount, 100);
+
+    // カウントダウン開始
+    startCountdown(() => {
+      updateFeedback(`🏁 ${selectedGrade}チャレンジ！スタート！`, "info");
+      setBoardEnabled(true);
+      startTimer();
+      nextAccount();
+    });
   }
   
   function finishGame() {
@@ -328,6 +368,23 @@ const TYPE_LABELS = {
     if (resultTimeEl) resultTimeEl.textContent = `タイム: ${formatDuration(durationMs)}`;
     if (resultBreakdownEl) resultBreakdownEl.textContent = `ミス ${Math.max(0, wrongCount)} / パス ${skipCount}`;
   
+    // 間違えた問題リストの生成
+    if (wrongAnswersList && wrongAnswersSection) {
+      wrongAnswersList.innerHTML = "";
+      const wrongEntries = answersLog.filter(entry => entry.result === "wrong");
+      
+      if (wrongEntries.length > 0) {
+        wrongAnswersSection.hidden = false;
+        wrongEntries.forEach(entry => {
+          const li = document.createElement("li");
+          li.innerHTML = `<strong>${entry.account}</strong> → 正解: ${TYPE_LABELS[entry.correctType]}`;
+          wrongAnswersList.appendChild(li);
+        });
+      } else {
+        wrongAnswersSection.hidden = true;
+      }
+    }
+
     const card = resultOverlay.querySelector(".result-card");
     if (card) {
       card.classList.remove("bounce-in");

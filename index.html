@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -7,8 +8,10 @@
   <link rel="stylesheet" href="styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap"
+    rel="stylesheet">
 </head>
+
 <body>
   <main class="app">
     <header>
@@ -46,7 +49,7 @@
         <div class="status-item timer">⏰ <span id="timer-display">00:00</span></div>
         <div class="status-item score">正解 <span id="correct-count">0</span></div>
       </section>
-      
+
       <div id="feedback" class="feedback-toast">スタートボタンを押してね！</div>
 
       <section class="board">
@@ -56,7 +59,7 @@
         </div>
 
         <div class="t-forms-container">
-          
+
           <div class="t-account bs-account">
             <div class="t-header">
               <span class="side-label">借方</span>
@@ -103,7 +106,7 @@
           </div>
 
           <div class="other-zone-wrapper">
-             <div class="drop-zone type-other push-btn" data-type="other" tabindex="0">
+            <div class="drop-zone type-other push-btn" data-type="other" tabindex="0">
               <h3>その他</h3>
             </div>
           </div>
@@ -125,6 +128,10 @@
     </li>
   </template>
 
+  <div id="countdown-overlay" class="countdown-overlay" hidden>
+    <div class="countdown-number">3</div>
+  </div>
+
   <div id="result-overlay" class="result-overlay" hidden>
     <div class="result-card">
       <h2>🎉 FINISH!</h2>
@@ -134,6 +141,13 @@
       </div>
       <p id="result-time">---</p>
       <p id="result-breakdown" class="breakdown">---</p>
+
+      <!-- 間違えた問題リスト -->
+      <div id="wrong-answers-section" class="wrong-answers-section" hidden>
+        <h3>⚠️ 間違えた問題</h3>
+        <ul id="wrong-answers-list" class="wrong-list"></ul>
+      </div>
+
       <div class="result-actions">
         <button type="button" id="result-close" class="ghost-button">閉じる</button>
         <button type="button" id="result-retry" class="primary-button push-btn">もう一度！</button>
@@ -143,4 +157,5 @@
 
   <script src="script.js"></script>
 </body>
+
 </html>
