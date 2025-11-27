@@ -78,6 +78,7 @@ let startTimestamp = null;
 let lastFinishedGrade = null;
 let lastFinishedQuestionGoal = 0;
 let subjectStats = { "3級": {}, "2級": {} };
+let subjectMemory = { "3級": {}, "2級": {} }; // 科目ごとの最終出題・正誤記録（級別）
 let accountsLoaded = false;
 
 // 新機能用状態
@@ -180,6 +181,17 @@ function loadData() {
       }
     }
 
+    const savedMemory = localStorage.getItem("ac_game_memory");
+    if (savedMemory) {
+      const parsed = JSON.parse(savedMemory);
+      if (parsed && typeof parsed === "object") {
+        subjectMemory = {
+          "3級": parsed["3級"] || {},
+          "2級": parsed["2級"] || {}
+        };
+      }
+    }
+
     updateReviewButtonState();
   } catch (e) {
     console.error("Save data load failed", e);
@@ -190,6 +202,7 @@ function saveData() {
   localStorage.setItem("ac_game_review_queue", JSON.stringify(reviewQueue));
   localStorage.setItem("ac_game_history", JSON.stringify(gameHistory));
   localStorage.setItem("ac_game_stats", JSON.stringify(subjectStats));
+  localStorage.setItem("ac_game_memory", JSON.stringify(subjectMemory));
   updateReviewButtonState();
 }
 
@@ -217,9 +230,11 @@ function executeClearData() {
   localStorage.removeItem("ac_game_review_queue");
   localStorage.removeItem("ac_game_history");
   localStorage.removeItem("ac_game_stats");
+  localStorage.removeItem("ac_game_memory");
   reviewQueue = [];
   gameHistory = [];
   subjectStats = { "3級": {}, "2級": {} };
+  subjectMemory = { "3級": {}, "2級": {} };
   updateReviewButtonState();
 
   // 画面を閉じずに、その場でグラフとランキングを更新（クリア）する
@@ -248,6 +263,15 @@ function updateSubjectStats(accountName, isCorrect) {
   }
   subjectStats[activeGrade][accountName].total += 1;
   if (isCorrect) subjectStats[activeGrade][accountName].correct += 1;
+}
+
+function updateSubjectMemory(accountName, isCorrect) {
+  if (!activeGrade) return;
+  if (!subjectMemory[activeGrade]) subjectMemory[activeGrade] = {};
+  subjectMemory[activeGrade][accountName] = {
+    lastSeen: Date.now(),
+    lastCorrect: isCorrect
+  };
 }
 
 function showStats() {
@@ -499,6 +523,45 @@ function shuffle(array) {
   return clone;
 }
 
+function weightedSample(pool, count, grade) {
+  const now = Date.now();
+  const mem = (grade && subjectMemory[grade]) ? subjectMemory[grade] : {};
+  const weights = pool.map(item => {
+    const entry = mem[item.name];
+    if (!entry) return { item, weight: 1.2 }; // 未出題は少し高め
+    const hours = Math.max(0, (now - entry.lastSeen) / 3600000);
+    const timeBoost = 1 + Math.min(72, hours) / 12; // 最大+6倍まで緩やかに上昇
+    const wrongBoost = entry.lastCorrect ? 1 : 1.8; // 直近誤答は強めに出題
+    const weight = Math.max(0.1, wrongBoost * timeBoost);
+    return { item, weight };
+  });
+
+  const selected = [];
+  const available = [...weights];
+  while (selected.length < count && available.length > 0) {
+    const totalWeight = available.reduce((sum, w) => sum + w.weight, 0);
+    let r = Math.random() * totalWeight;
+    let chosenIndex = 0;
+    for (let i = 0; i < available.length; i++) {
+      r -= available[i].weight;
+      if (r <= 0) {
+        chosenIndex = i;
+        break;
+      }
+    }
+    const [picked] = available.splice(chosenIndex, 1);
+    selected.push(picked.item);
+  }
+
+  // fallback: もし重み計算で不足した場合は残りをシャッフルで補う
+  if (selected.length < count) {
+    const remaining = pool.filter(item => !selected.includes(item));
+    selected.push(...shuffle(remaining).slice(0, count - selected.length));
+  }
+
+  return selected.slice(0, count);
+}
+
 // 履歴追加
 function updateHistory(chosenType, isCorrect) {
   const fragment = historyTemplate.content.cloneNode(true);
@@ -559,6 +622,7 @@ function evaluateAnswer(selectedType, zone = null) {
 
   // 統計更新
   updateSubjectStats(currentAccount.name, isCorrect);
+  updateSubjectMemory(currentAccount.name, isCorrect);
 
   // 復習リスト更新
   if (isReviewMode) {
@@ -651,7 +715,7 @@ function startGame(selectedGrade, questionCount, isReview = false) {
 
   answersLog = [];
   questionGoal = questionCount;
-  queue = shuffle(pool).slice(0, questionGoal);
+  queue = isReviewMode ? shuffle(pool).slice(0, questionGoal) : weightedSample(pool, questionGoal, targetGrade);
   totalCount = 0;
   correctCount = 0;
   locked = false;
