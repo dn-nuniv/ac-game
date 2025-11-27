@@ -43,7 +43,10 @@ const wrongAnswersSection = document.getElementById("wrong-answers-section");
 const wrongAnswersList = document.getElementById("wrong-answers-list");
 
 // 新機能用DOM
-const reviewButton = document.getElementById("review-button");
+const reviewButtons = {
+  "3級": document.getElementById("review-3-button"),
+  "2級": document.getElementById("review-2-button"),
+};
 const showStatsButton = document.getElementById("show-stats-button");
 const statsOverlay = document.getElementById("stats-overlay");
 const statsCloseButton = document.getElementById("stats-close");
@@ -55,6 +58,10 @@ const clearDataButton = document.getElementById("clear-data-button");
 const confirmOverlay = document.getElementById("confirm-overlay");
 const confirmOkButton = document.getElementById("confirm-ok");
 const confirmCancelButton = document.getElementById("confirm-cancel");
+const accuracyTitleEl = document.getElementById("accuracy-title");
+const timeTitleEl = document.getElementById("time-title");
+const bestTitleEl = document.getElementById("best-title");
+const worstTitleEl = document.getElementById("worst-title");
 
 // 状態管理
 let allAccounts = [];
@@ -70,15 +77,21 @@ let timerInterval = null;
 let startTimestamp = null;
 let lastFinishedGrade = null;
 let lastFinishedQuestionGoal = 0;
-let subjectStats = {};
+let subjectStats = { "3級": {}, "2級": {} };
 let accountsLoaded = false;
 
 // 新機能用状態
 let isReviewMode = false;
-let reviewQueue = []; // 復習が必要な勘定科目名のリスト
+let reviewQueue = []; // 復習が必要な科目 { name, grade }
 let gameHistory = []; // { date, grade, accuracy, time }
 let accuracyChartInstance = null;
 let timeChartInstance = null;
+const defaultTitles = {
+  accuracy: accuracyTitleEl ? accuracyTitleEl.textContent : "",
+  time: timeTitleEl ? timeTitleEl.textContent : "",
+  best: bestTitleEl ? bestTitleEl.textContent : "",
+  worst: worstTitleEl ? worstTitleEl.textContent : "",
+};
 
 // --- CSV処理 ---
 
@@ -140,13 +153,32 @@ async function loadAccounts() {
 function loadData() {
   try {
     const savedReview = localStorage.getItem("ac_game_review_queue");
-    if (savedReview) reviewQueue = JSON.parse(savedReview);
+    if (savedReview) {
+      const parsed = JSON.parse(savedReview);
+      if (Array.isArray(parsed)) {
+        reviewQueue = parsed.map(item => {
+          if (typeof item === "string") return { name: item, grade: null };
+          const { name, grade } = item || {};
+          return name ? { name, grade: grade || null } : null;
+        }).filter(Boolean);
+      }
+    }
 
     const savedHistory = localStorage.getItem("ac_game_history");
     if (savedHistory) gameHistory = JSON.parse(savedHistory);
 
     const savedStats = localStorage.getItem("ac_game_stats");
-    if (savedStats) subjectStats = JSON.parse(savedStats);
+    if (savedStats) {
+      const parsedStats = JSON.parse(savedStats);
+      if (parsedStats && typeof parsedStats === "object") {
+        // 旧データ: フラットな科目 => grade不明として3級に入れる
+        if (!parsedStats["3級"] && !parsedStats["2級"]) {
+          subjectStats = { "3級": parsedStats, "2級": {} };
+        } else {
+          subjectStats = { "3級": parsedStats["3級"] || {}, "2級": parsedStats["2級"] || {} };
+        }
+      }
+    }
 
     updateReviewButtonState();
   } catch (e) {
@@ -162,11 +194,14 @@ function saveData() {
 }
 
 function updateReviewButtonState() {
-  if (!reviewButton) return;
-  const hasReview = reviewQueue.length > 0;
-  const canPlay = hasReview && accountsLoaded;
-  reviewButton.disabled = !canPlay;
-  reviewButton.textContent = `復習(${reviewQueue.length})`;
+  ["3級", "2級"].forEach((grade) => {
+    const btn = reviewButtons[grade];
+    if (!btn) return;
+    const count = reviewQueue.filter(item => item.grade === grade || item.grade === null).length;
+    const canPlay = count > 0 && accountsLoaded;
+    btn.disabled = !canPlay;
+    btn.textContent = `${grade} 復習(${count})`;
+  });
 }
 
 function clearData() {
@@ -184,7 +219,7 @@ function executeClearData() {
   localStorage.removeItem("ac_game_stats");
   reviewQueue = [];
   gameHistory = [];
-  subjectStats = {};
+  subjectStats = { "3級": {}, "2級": {} };
   updateReviewButtonState();
 
   // 画面を閉じずに、その場でグラフとランキングを更新（クリア）する
@@ -206,11 +241,13 @@ function hideConfirmModal() {
 // --- 統計・グラフ ---
 
 function updateSubjectStats(accountName, isCorrect) {
-  if (!subjectStats[accountName]) {
-    subjectStats[accountName] = { correct: 0, total: 0 };
+  if (!activeGrade) return;
+  if (!subjectStats[activeGrade]) subjectStats[activeGrade] = {};
+  if (!subjectStats[activeGrade][accountName]) {
+    subjectStats[activeGrade][accountName] = { correct: 0, total: 0 };
   }
-  subjectStats[accountName].total += 1;
-  if (isCorrect) subjectStats[accountName].correct += 1;
+  subjectStats[activeGrade][accountName].total += 1;
+  if (isCorrect) subjectStats[activeGrade][accountName].correct += 1;
 }
 
 function showStats() {
@@ -234,7 +271,9 @@ function renderChart() {
   if (!accuracyChartCanvas || !timeChartCanvas) return;
 
   // 過去10回分のみ表示
-  const recentGames = gameHistory.slice(-10);
+  const currentGrade = gradeSelect ? gradeSelect.value : null;
+  updateStatsTitles(currentGrade);
+  const recentGames = gameHistory.filter(g => !currentGrade || g.grade === currentGrade).slice(-10);
   const labels = recentGames.map((g, i) => i + 1);
   const accuracyData = recentGames.map(g => g.accuracy);
   const timeData = recentGames.map(g => Math.round(g.time / 1000)); // 秒
@@ -321,14 +360,15 @@ function renderChart() {
 
 function renderRanking() {
   if (!bestListEl || !worstListEl) return;
+  const currentGrade = gradeSelect ? gradeSelect.value : null;
+  updateStatsTitles(currentGrade);
+  const gradeStats = (currentGrade && subjectStats[currentGrade]) ? subjectStats[currentGrade] : {};
 
-  const entries = Object.entries(subjectStats).map(([name, stat]) => {
-    return {
-      name,
-      rate: stat.total > 0 ? (stat.correct / stat.total) * 100 : 0,
-      count: stat.total
-    };
-  }).filter(e => e.count >= 1); // 1回以上回答したものを表示
+  const entries = Object.entries(gradeStats).map(([name, stat]) => ({
+    name,
+    rate: stat.total > 0 ? (stat.correct / stat.total) * 100 : 0,
+    count: stat.total
+  })).filter(e => e.count >= 1); // 1回以上回答したものを表示
 
   // ベスト5
   const best = [...entries].sort((a, b) => b.rate - a.rate).slice(0, 5);
@@ -356,6 +396,14 @@ function renderRanking() {
 
   createList(best, bestListEl);
   createList(worst, worstListEl);
+}
+
+function updateStatsTitles(gradeLabel) {
+  const suffix = gradeLabel ? ` (${gradeLabel})` : "";
+  if (accuracyTitleEl) accuracyTitleEl.textContent = `${defaultTitles.accuracy}${suffix}`;
+  if (timeTitleEl) timeTitleEl.textContent = `${defaultTitles.time}${suffix}`;
+  if (bestTitleEl) bestTitleEl.textContent = `${defaultTitles.best}${suffix}`;
+  if (worstTitleEl) worstTitleEl.textContent = `${defaultTitles.worst}${suffix}`;
 }
 
 // --- ゲームロジック ---
@@ -516,14 +564,15 @@ function evaluateAnswer(selectedType, zone = null) {
   if (isReviewMode) {
     if (isCorrect) {
       // 復習モードで正解したらリストから削除
-      reviewQueue = reviewQueue.filter(name => name !== currentAccount.name);
+      reviewQueue = reviewQueue.filter(item => !(item.name === currentAccount.name && (item.grade === activeGrade || item.grade === null)));
     }
     // 復習モードで間違えたら... そのまま残る（何もしない）
   } else {
     if (!isCorrect && selectedType !== "skip") {
       // 通常モードで間違えたらリストに追加（重複なし）
-      if (!reviewQueue.includes(currentAccount.name)) {
-        reviewQueue.push(currentAccount.name);
+      const exists = reviewQueue.some(item => item.name === currentAccount.name && item.grade === activeGrade);
+      if (!exists) {
+        reviewQueue.push({ name: currentAccount.name, grade: activeGrade });
       }
     }
   }
@@ -574,10 +623,18 @@ function startGame(selectedGrade, questionCount, isReview = false) {
 
   let pool = [];
   isReviewMode = isReview;
+  const targetGrade = isReviewMode
+    ? (selectedGrade || (gradeSelect ? gradeSelect.value : null))
+    : selectedGrade;
 
   if (isReviewMode) {
     // 復習モード: reviewQueueにある科目のみ
-    pool = allAccounts.filter(item => reviewQueue.includes(item.name));
+    pool = allAccounts.filter(item =>
+      item.grade === targetGrade &&
+      reviewQueue.some(entry =>
+        entry.name === item.name && (entry.grade === targetGrade || entry.grade === null)
+      )
+    );
     if (pool.length === 0) {
       updateFeedback("復習する科目がありません！", "correct");
       return;
@@ -599,7 +656,7 @@ function startGame(selectedGrade, questionCount, isReview = false) {
   correctCount = 0;
   locked = false;
   currentAccount = null;
-  activeGrade = selectedGrade;
+  activeGrade = targetGrade || selectedGrade;
 
   questionCountEl.textContent = "0";
   correctCountEl.textContent = "0";
@@ -742,6 +799,10 @@ startButtons.forEach((button) => {
   });
 });
 
+if (gradeSelect) {
+  gradeSelect.addEventListener("change", updateReviewButtonState);
+}
+
 if (localCsvButton && localCsvInput) {
   localCsvButton.addEventListener("click", () => localCsvInput.click());
   localCsvInput.addEventListener("change", async (e) => {
@@ -764,7 +825,7 @@ if (resultRetryButton) resultRetryButton.addEventListener("click", () => {
   if (isReviewMode) {
     // 復習モードのリトライ: まだ残っているものがあれば
     if (reviewQueue.length > 0) {
-      startGame(null, 0, true);
+      startGame(lastFinishedGrade || (gradeSelect ? gradeSelect.value : null), 0, true);
     } else {
       updateFeedback("復習完了！", "correct");
     }
@@ -773,11 +834,12 @@ if (resultRetryButton) resultRetryButton.addEventListener("click", () => {
   }
 });
 
-if (reviewButton) {
-  reviewButton.addEventListener("click", () => {
-    startGame(null, 0, true);
+Object.entries(reviewButtons).forEach(([grade, btn]) => {
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    startGame(grade, 0, true);
   });
-}
+});
 
 if (showStatsButton) showStatsButton.addEventListener("click", showStats);
 if (statsCloseButton) statsCloseButton.addEventListener("click", hideStats);

@@ -32,7 +32,8 @@
           <button type="button" class="start-button push-btn" data-count="10" disabled>10問</button>
           <button type="button" class="start-button push-btn" data-count="20" disabled>20問</button>
           <button type="button" class="start-button push-btn" data-count="30" disabled>30問</button>
-          <button type="button" id="review-button" class="start-button push-btn review-btn" disabled>復習</button>
+          <button type="button" id="review-3-button" class="start-button push-btn review-btn" disabled>3級 復習</button>
+          <button type="button" id="review-2-button" class="start-button push-btn review-btn" disabled>2級 復習</button>
         </div>
       </div>
       <div class="sub-controls">
@@ -169,22 +170,22 @@
       <div class="stats-content">
         <div class="charts-wrapper">
           <div class="chart-container">
-            <h3>📈 正答率推移 (%)</h3>
+            <h3 id="accuracy-title">📈 正答率推移 (%)</h3>
             <canvas id="accuracy-chart"></canvas>
           </div>
           <div class="chart-container">
-            <h3>⏱️ 解答時間推移 (秒)</h3>
+            <h3 id="time-title">⏱️ 解答時間推移 (秒)</h3>
             <canvas id="time-chart"></canvas>
           </div>
         </div>
 
         <div class="stats-lists">
           <div class="stats-col">
-            <h3>🏆 得意な科目 (Best 5)</h3>
+            <h3 id="best-title">🏆 得意な科目 (Best 5)</h3>
             <ul id="best-list" class="ranking-list"></ul>
           </div>
           <div class="stats-col">
-            <h3>😱 苦手な科目 (Worst 5)</h3>
+            <h3 id="worst-title">😱 苦手な科目 (Worst 5)</h3>
             <ul id="worst-list" class="ranking-list"></ul>
           </div>
         </div>
