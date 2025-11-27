@@ -10,6 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap"
     rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
@@ -31,9 +32,11 @@
           <button type="button" class="start-button push-btn" data-count="10" disabled>10問</button>
           <button type="button" class="start-button push-btn" data-count="20" disabled>20問</button>
           <button type="button" class="start-button push-btn" data-count="30" disabled>30問</button>
+          <button type="button" id="review-button" class="start-button push-btn review-btn" disabled>復習</button>
         </div>
       </div>
       <div class="sub-controls">
+        <button id="show-stats-button" type="button" class="sm-btn">📊 データ</button>
         <button id="export-button" type="button" class="sm-btn" disabled>ログ保存</button>
       </div>
       <div id="csv-fallback" class="csv-fallback" hidden>
@@ -151,6 +154,57 @@
       <div class="result-actions">
         <button type="button" id="result-close" class="ghost-button">閉じる</button>
         <button type="button" id="result-retry" class="primary-button push-btn">もう一度！</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 統計・データ画面 -->
+  <div id="stats-overlay" class="result-overlay" hidden>
+    <div class="result-card stats-card">
+      <div class="stats-header">
+        <h2>📊 プレイデータ</h2>
+        <button type="button" id="stats-close" class="ghost-button">閉じる</button>
+      </div>
+
+      <div class="stats-content">
+        <div class="charts-wrapper">
+          <div class="chart-container">
+            <h3>📈 正答率推移 (%)</h3>
+            <canvas id="accuracy-chart"></canvas>
+          </div>
+          <div class="chart-container">
+            <h3>⏱️ 解答時間推移 (秒)</h3>
+            <canvas id="time-chart"></canvas>
+          </div>
+        </div>
+
+        <div class="stats-lists">
+          <div class="stats-col">
+            <h3>🏆 得意な科目 (Best 5)</h3>
+            <ul id="best-list" class="ranking-list"></ul>
+          </div>
+          <div class="stats-col">
+            <h3>😱 苦手な科目 (Worst 5)</h3>
+            <ul id="worst-list" class="ranking-list"></ul>
+          </div>
+        </div>
+
+        <div class="stats-actions">
+          <button type="button" id="clear-data-button" class="ghost-button danger-text">データを消去する</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- データ消去確認モーダル -->
+  <div id="confirm-overlay" class="result-overlay" hidden>
+    <div class="result-card confirm-card">
+      <h2>⚠️ 確認</h2>
+      <p>これまでの成績と復習データを<br>すべて消去しますか？</p>
+      <p class="confirm-note">※この操作は取り消せません</p>
+      <div class="result-actions">
+        <button type="button" id="confirm-cancel" class="ghost-button">キャンセル</button>
+        <button type="button" id="confirm-ok" class="primary-button push-btn danger-btn">消去する</button>
       </div>
     </div>
   </div>
