@@ -669,8 +669,9 @@ function renderDictionary() {
   const currentGrade = gradeSelect ? gradeSelect.value : null;
   const currentExam = examSelect ? examSelect.value : null;
   const gradeLabel = currentGrade || "";
+  const titleSuffix = [currentExam, gradeLabel].filter(Boolean).join(" / ");
   if (dictionaryTitleEl) {
-    dictionaryTitleEl.textContent = `📚 勘定科目図鑑${gradeLabel ? " (" + gradeLabel + ")" : ""}`;
+    dictionaryTitleEl.textContent = `📚 勘定科目辞書${titleSuffix ? " (" + titleSuffix + ")" : ""}`;
   }
 
   if (!currentGrade) {
