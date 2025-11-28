@@ -898,7 +898,7 @@ header h1 {
   color: #fff;
 }
 
-/* 勘定科目図鑑用 */
+/* 勘定科目辞書用 */
 
 .stats-dictionary {
   margin-top: 1rem;
@@ -916,12 +916,29 @@ header h1 {
   border-bottom: 1px solid #e2e8f0;
 }
 
-.dictionary-group.type-asset { color: #1e40af; }
-.dictionary-group.type-liability { color: #991b1b; }
-.dictionary-group.type-equity { color: #6b21a8; }
-.dictionary-group.type-revenue { color: #166534; }
-.dictionary-group.type-expense { color: #92400e; }
-.dictionary-group.type-other { color: #4b5563; }
+.dictionary-group.type-asset {
+  color: #1e40af;
+}
+
+.dictionary-group.type-liability {
+  color: #991b1b;
+}
+
+.dictionary-group.type-equity {
+  color: #6b21a8;
+}
+
+.dictionary-group.type-revenue {
+  color: #166534;
+}
+
+.dictionary-group.type-expense {
+  color: #92400e;
+}
+
+.dictionary-group.type-other {
+  color: #4b5563;
+}
 
 .dictionary-row-main {
   display: flex;
