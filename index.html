@@ -145,6 +145,8 @@
       </div>
       <p id="result-time">---</p>
       <p id="result-breakdown" class="breakdown">---</p>
+      <p id="result-speed-comment" class="speed-comment"></p>
+      <p id="result-time-bonus" class="speed-comment"></p>
 
       <!-- 間違えた問題リスト -->
       <div id="wrong-answers-section" class="wrong-answers-section" hidden>
@@ -168,6 +170,17 @@
       </div>
 
       <div class="stats-content">
+        <div class="stats-meta">
+          <div class="stats-col stats-mini">
+            <h3 id="mission-title">🎯 今日のミッション</h3>
+            <p id="mission-text" class="mission-text">読み込み中...</p>
+          </div>
+          <div class="stats-col stats-mini">
+            <h3 id="achievement-title">🏅 称号</h3>
+            <ul id="achievement-list" class="ranking-list achievement-list"></ul>
+          </div>
+        </div>
+
         <div class="charts-wrapper">
           <div class="chart-container">
             <h3 id="accuracy-title">📈 正答率推移 (%)</h3>
@@ -188,6 +201,11 @@
             <h3 id="worst-title">😱 苦手な科目 (Worst 5)</h3>
             <ul id="worst-list" class="ranking-list"></ul>
           </div>
+        </div>
+
+        <div class="stats-col stats-dictionary">
+          <h3 id="dictionary-title">📚 勘定科目図鑑</h3>
+          <ul id="dictionary-list" class="ranking-list dictionary-list"></ul>
         </div>
 
         <div class="stats-actions">
