@@ -1311,13 +1311,21 @@ evaluateAnswer = function (selectedType, zone = null) {
 
   if (isReviewMode) {
     if (isCorrect) {
-      reviewQueue = reviewQueue.filter(item => !(item.name === currentAccount.name && (item.grade === activeGrade || item.grade === null)));
+      reviewQueue = reviewQueue.filter(item =>
+        !(item.name === currentAccount.name &&
+          (item.grade === activeGrade || item.grade === null) &&
+          (!item.exam || item.exam === activeExam))
+      );
     }
   } else {
     if (!isCorrect && selectedType !== "skip") {
-      const exists = reviewQueue.some(item => item.name === currentAccount.name && item.grade === activeGrade);
+      const exists = reviewQueue.some(item =>
+        item.name === currentAccount.name &&
+        item.grade === activeGrade &&
+        (!item.exam || item.exam === activeExam)
+      );
       if (!exists) {
-        reviewQueue.push({ name: currentAccount.name, grade: activeGrade });
+        reviewQueue.push({ name: currentAccount.name, grade: activeGrade, exam: activeExam });
       }
     }
   }
