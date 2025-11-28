@@ -998,19 +998,34 @@ function shuffle(array) {
 function weightedSample(pool, count, grade) {
   const now = Date.now();
   const mem = (grade && subjectMemory[grade]) ? subjectMemory[grade] : {};
-  const weights = pool.map(item => {
+  const unseen = [];
+  const seenWeights = [];
+
+  pool.forEach(item => {
     const entry = mem[item.name];
-    if (!entry) return { item, weight: 1.2 }; // 未出題は少し高め
+    if (!entry) {
+      unseen.push(item);
+      return;
+    }
     const hours = Math.max(0, (now - entry.lastSeen) / 3600000);
     const timeBoost = 1 + Math.min(72, hours) / 12; // 最大+6倍まで緩やかに上昇
     const wrongBoost = entry.lastCorrect ? 1 : 1.8; // 直近誤答は強めに出題
     const weight = Math.max(0.1, wrongBoost * timeBoost);
-    return { item, weight };
+    seenWeights.push({ item, weight });
   });
 
   const selected = [];
-  const available = [...weights];
-  while (selected.length < count && available.length > 0) {
+
+  // 1. 未出題を優先的に詰める
+  if (unseen.length > 0) {
+    const shuffledUnseen = shuffle(unseen);
+    selected.push(...shuffledUnseen.slice(0, count));
+  }
+
+  // 2. まだ足りない分を重み付きで補う
+  let remaining = count - selected.length;
+  const available = [...seenWeights];
+  while (remaining > 0 && available.length > 0) {
     const totalWeight = available.reduce((sum, w) => sum + w.weight, 0);
     let r = Math.random() * totalWeight;
     let chosenIndex = 0;
@@ -1023,6 +1038,7 @@ function weightedSample(pool, count, grade) {
     }
     const [picked] = available.splice(chosenIndex, 1);
     selected.push(picked.item);
+    remaining -= 1;
   }
 
   // fallback: もし重み計算で不足した場合は残りをシャッフルで補う
