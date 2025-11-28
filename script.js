@@ -109,6 +109,15 @@ const defaultTitles = {
   worst: worstTitleEl ? worstTitleEl.textContent : "",
 };
 
+// Service Worker 登録（PWA用）
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch((err) => {
+      console.warn("Service worker registration failed:", err);
+    });
+  });
+}
+
 // --- CSV処理 ---
 
 function parseCSV(text) {
