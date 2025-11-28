@@ -21,6 +21,8 @@ const skipButton = document.getElementById("skip-button");
 const dropZones = document.querySelectorAll(".drop-zone");
 const gradeForm = document.getElementById("grade-form");
 const gradeSelect = document.getElementById("grade-select");
+const examSelect = document.getElementById("exam-select");
+const showYomiCheckbox = document.getElementById("show-yomi");
 const startButtons = document.querySelectorAll(".start-button");
 const startButtonsWrapper = document.querySelector(".start-buttons");
 const timerDisplayEl = document.getElementById("timer-display");
@@ -41,6 +43,8 @@ const resultTimeEl = document.getElementById("result-time");
 const resultBreakdownEl = document.getElementById("result-breakdown");
 const resultSpeedCommentEl = document.getElementById("result-speed-comment");
 const resultTimeBonusEl = document.getElementById("result-time-bonus");
+const accountYomiEl = document.getElementById("account-yomi");
+const accountCardTextEl = document.getElementById("account-card-text");
 const resultCloseButton = document.getElementById("result-close");
 const resultRetryButton = document.getElementById("result-retry");
 const wrongAnswersSection = document.getElementById("wrong-answers-section");
@@ -87,13 +91,19 @@ let timerInterval = null;
 let startTimestamp = null;
 let lastFinishedGrade = null;
 let lastFinishedQuestionGoal = 0;
-let subjectStats = {}; // { grade: { accountName: {correct,total} } }
-let subjectMemory = {}; // { grade: { accountName: {lastSeen,lastCorrect} } }
+let subjectStats = {}; // { gradeKey: { accountName: {correct,total} } }
+let subjectMemory = {}; // { gradeKey: { accountName: {lastSeen,lastCorrect} } }
 let accountsLoaded = false;
 let availableGrades = [];
+let availableExams = [];
+let gradesByExam = {};
+let activeExam = null;
 
 if (availableGrades.length === 0 && gradeSelect) {
   availableGrades = Array.from(gradeSelect.options).map(opt => opt.value).filter(Boolean);
+}
+if (availableExams.length === 0 && examSelect) {
+  availableExams = Array.from(examSelect.options).map(opt => opt.value).filter(Boolean);
 }
 let currentStreak = 0;
 let missionState = { date: null, type: null, target: 0, progress: 0, done: false, description: "" };
@@ -102,7 +112,7 @@ let calendarView = { year: null, month: null }; // 月送り用
 
 // 新機能用状態
 let isReviewMode = false;
-let reviewQueue = []; // 復習が必要な科目 { name, grade }
+let reviewQueue = []; // 復習が必要な科目 { name, grade, exam }
 let gameHistory = []; // { date, grade, accuracy, time, questionCount }
 let accuracyChartInstance = null;
 let timeChartInstance = null;
@@ -114,41 +124,93 @@ const defaultTitles = {
 };
 
 // Service Worker 登録（PWA用）
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("sw.js").catch((err) => {
-      console.warn("Service worker registration failed:", err);
-    });
-  });
-}
+// Service Worker 登録（PWA用） - ローカルでのアイコン点滅防止のため無効化
+// if ("serviceWorker" in navigator) {
+//   window.addEventListener("load", () => {
+//     navigator.serviceWorker.register("sw.js").catch((err) => {
+//       console.warn("Service worker registration failed:", err);
+//     });
+//   });
+// }
 
 // --- CSV処理 ---
 
 function parseCSV(text) {
-  return text
-    .split(/\r?\n/)
-    .filter((line) => line.trim().length > 0)
-    .slice(1)
+  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  if (lines.length === 0) return [];
+  const headerLine = lines.shift().replace(/^\uFEFF/, "");
+  const headers = headerLine.split(",").map((h) => h.trim().toLowerCase());
+  const idx = {
+    exam: headers.indexOf("exam"),
+    grade: headers.indexOf("grade"),
+    name: headers.indexOf("name"),
+    type: headers.indexOf("type"),
+    yomi: headers.indexOf("yomi"),
+  };
+
+  return lines
     .map((line) => {
-      const [grade, name, type] = line.split(",").map((value) => value.trim());
-      return { grade, name, type };
+      const cols = line.split(",").map((value) => value.trim());
+
+      // ヘッダーが無い/足りない場合のフォールバック: 先頭から順に割り当て
+      const fallback = {
+        exam: cols[0],
+        grade: cols[0],
+        name: cols[1],
+        type: cols[2],
+        yomi: cols[3] || ""
+      };
+
+      const exam = idx.exam >= 0 ? cols[idx.exam] : (headers.includes("grade") ? "日商" : fallback.exam || "日商");
+      const grade = idx.grade >= 0 ? cols[idx.grade] : fallback.grade;
+      const name = idx.name >= 0 ? cols[idx.name] : fallback.name;
+      const type = idx.type >= 0 ? cols[idx.type] : fallback.type;
+      const yomi = idx.yomi >= 0 ? cols[idx.yomi] : fallback.yomi;
+      return { exam, grade, name, type, yomi };
     })
-    .filter((row) => row.grade && row.name && row.type);
+    .filter((row) => row.exam && row.grade && row.name && row.type);
+}
+
+function ensureCsvPickerVisible() {
+  if (csvFallbackSection) csvFallbackSection.hidden = false;
+}
+
+function getGradeKey(grade, exam) {
+  return `${exam || "default"}|${grade || "unknown"}`;
+}
+
+function normalizeGradeKeyedObject(obj) {
+  const normalized = {};
+  const defaultExam = (examSelect && examSelect.value) || availableExams[0] || "日商";
+  Object.entries(obj || {}).forEach(([key, val]) => {
+    const targetKey = key.includes("|") ? key : getGradeKey(key, defaultExam);
+    normalized[targetKey] = val;
+  });
+  return normalized;
 }
 
 function handleAccountsLoaded(accounts, hintMessage = "") {
   allAccounts = accounts;
   accountsLoaded = true;
-  const grades = Array.from(new Set(allAccounts.map(a => a.grade))).filter(Boolean);
-  availableGrades = grades.length > 0 ? grades : availableGrades;
-  setupGrades(availableGrades);
+  const exams = Array.from(new Set(allAccounts.map(a => a.exam || "日商"))).filter(Boolean);
+  availableExams = exams.length > 0 ? exams : availableExams;
+  gradesByExam = {};
+  allAccounts.forEach(acc => {
+    const ex = acc.exam || "日商";
+    if (!gradesByExam[ex]) gradesByExam[ex] = new Set();
+    if (acc.grade) gradesByExam[ex].add(acc.grade);
+  });
+  Object.keys(gradesByExam).forEach(ex => {
+    gradesByExam[ex] = Array.from(gradesByExam[ex]);
+  });
+  setupExams(availableExams);
   if (allAccounts.length === 0) {
     updateFeedback("CSVにデータが見つかりませんでした。", "error");
     setStartButtonsDisabled(true);
     return;
   }
 
-  if (csvFallbackSection) csvFallbackSection.hidden = true;
+  if (csvFallbackSection) csvFallbackSection.hidden = true; // 読み込み成功したら隠す
   updateFeedback(`${hintMessage} 準備完了！級と問題数を選んでスタート！`, "info");
   setStartButtonsDisabled(false);
   updateReviewButtonState();
@@ -184,14 +246,15 @@ async function loadAccounts() {
 
 function loadData() {
   try {
+    ensureCsvPickerVisible(); // 最初から手動選択を許可
     const savedReview = localStorage.getItem("ac_game_review_queue");
     if (savedReview) {
       const parsed = JSON.parse(savedReview);
       if (Array.isArray(parsed)) {
         reviewQueue = parsed.map(item => {
-          if (typeof item === "string") return { name: item, grade: null };
-          const { name, grade } = item || {};
-          return name ? { name, grade: grade || null } : null;
+          if (typeof item === "string") return { name: item, grade: null, exam: null };
+          const { name, grade, exam } = item || {};
+          return name ? { name, grade: grade || null, exam: exam || null } : null;
         }).filter(Boolean);
       }
     }
@@ -207,7 +270,8 @@ function loadData() {
             : null;
           return {
             ...item,
-            questionCount: Number.isFinite(normalizedCount) ? normalizedCount : null
+            questionCount: Number.isFinite(normalizedCount) ? normalizedCount : null,
+            exam: item && item.exam ? item.exam : null
           };
         });
       } else {
@@ -243,13 +307,31 @@ function loadData() {
       }
     }
 
+    subjectStats = normalizeGradeKeyedObject(subjectStats);
+    subjectMemory = normalizeGradeKeyedObject(subjectMemory);
+
+    if (Object.keys(gradesByExam).length === 0) {
+      Object.keys(subjectStats || {}).forEach((k) => {
+        const [examPart, gradePart] = k.includes("|") ? k.split("|") : ["日商", k];
+        if (!gradesByExam[examPart]) gradesByExam[examPart] = new Set();
+        if (gradePart) gradesByExam[examPart].add(gradePart);
+      });
+      Object.keys(gradesByExam).forEach(ex => gradesByExam[ex] = Array.from(gradesByExam[ex]));
+    }
+
     if (availableGrades.length === 0) {
-      const fromStats = Object.keys(subjectStats || {});
+      const fromStats = Object.keys(subjectStats || {}).map((k) => k.includes("|") ? k.split("|")[1] : k);
       const fromSelect = gradeSelect ? Array.from(gradeSelect.options).map(opt => opt.value).filter(Boolean) : [];
       const derived = (fromStats.length ? fromStats : fromSelect).filter(Boolean);
       availableGrades = derived.length ? Array.from(new Set(derived)) : availableGrades;
     }
-    if (availableGrades.length > 0) setupGrades(availableGrades);
+    if (availableExams.length === 0) {
+      const fromStats = Object.keys(subjectStats || {}).map((k) => k.includes("|") ? k.split("|")[0] : "日商");
+      const fromSelectExam = examSelect ? Array.from(examSelect.options).map(opt => opt.value).filter(Boolean) : [];
+      const derived = (fromStats.length ? fromStats : fromSelectExam).filter(Boolean);
+      availableExams = derived.length ? Array.from(new Set(derived)) : availableExams;
+    }
+    if (availableExams.length > 0) setupExams(availableExams);
 
     updateReviewButtonState();
   } catch (e) {
@@ -271,7 +353,11 @@ function updateReviewButtonState() {
   availableGrades.forEach((grade) => {
     const btn = reviewButtons[grade];
     if (!btn) return;
-    const count = reviewQueue.filter(item => item.grade === grade || item.grade === null).length;
+    const currentExam = examSelect ? examSelect.value : null;
+    const count = reviewQueue.filter(item =>
+      (item.grade === grade || item.grade === null) &&
+      (!currentExam || !item.exam || item.exam === currentExam)
+    ).length;
     const canPlay = count > 0 && accountsLoaded;
     btn.disabled = !canPlay;
     btn.textContent = `${grade} 復習(${count})`;
@@ -322,21 +408,51 @@ function hideConfirmModal() {
 
 function updateSubjectStats(accountName, isCorrect) {
   if (!activeGrade) return;
-  if (!subjectStats[activeGrade]) subjectStats[activeGrade] = {};
-  if (!subjectStats[activeGrade][accountName]) {
-    subjectStats[activeGrade][accountName] = { correct: 0, total: 0 };
+  const key = getGradeKey(activeGrade, activeExam);
+  if (!subjectStats[key]) subjectStats[key] = {};
+  if (!subjectStats[key][accountName]) {
+    subjectStats[key][accountName] = { correct: 0, total: 0 };
   }
-  subjectStats[activeGrade][accountName].total += 1;
-  if (isCorrect) subjectStats[activeGrade][accountName].correct += 1;
+  subjectStats[key][accountName].total += 1;
+  if (isCorrect) subjectStats[key][accountName].correct += 1;
 }
 
 function updateSubjectMemory(accountName, isCorrect) {
   if (!activeGrade) return;
-  if (!subjectMemory[activeGrade]) subjectMemory[activeGrade] = {};
-  subjectMemory[activeGrade][accountName] = {
+  const key = getGradeKey(activeGrade, activeExam);
+  if (!subjectMemory[key]) subjectMemory[key] = {};
+  subjectMemory[key][accountName] = {
     lastSeen: Date.now(),
     lastCorrect: isCorrect
   };
+}
+
+function getGradesForExam(exam) {
+  if (exam && gradesByExam[exam]) return gradesByExam[exam];
+  // フォールバック: 既存のavailableGrades
+  return availableGrades.length ? availableGrades : [];
+}
+
+function setupExams(exams) {
+  if (!exams || exams.length === 0) return;
+  availableExams = exams;
+  if (examSelect) {
+    const current = examSelect.value;
+    examSelect.innerHTML = "";
+    exams.forEach((exam) => {
+      const opt = document.createElement("option");
+      opt.value = exam;
+      opt.textContent = exam;
+      examSelect.appendChild(opt);
+    });
+    if (exams.includes(current)) {
+      examSelect.value = current;
+    } else {
+      examSelect.value = exams[0];
+    }
+  }
+  const grades = getGradesForExam(examSelect ? examSelect.value : null);
+  setupGrades(grades);
 }
 
 function setupGrades(grades) {
@@ -360,8 +476,9 @@ function setupGrades(grades) {
   }
 
   grades.forEach((grade) => {
-    if (!subjectStats[grade]) subjectStats[grade] = {};
-    if (!subjectMemory[grade]) subjectMemory[grade] = {};
+    const key = getGradeKey(grade, examSelect ? examSelect.value : null);
+    if (!subjectStats[key]) subjectStats[key] = {};
+    if (!subjectMemory[key]) subjectMemory[key] = {};
   });
 
   buildReviewButtons(grades);
@@ -410,10 +527,11 @@ function renderChart() {
 
   // 過去10回分のみ表示
   const currentGrade = gradeSelect ? gradeSelect.value : null;
+  const currentExam = examSelect ? examSelect.value : null;
   const selectedCount = questionFilterSelect ? questionFilterSelect.value : "all";
   updateStatsTitles(currentGrade);
   const recentGames = gameHistory
-    .filter(g => !currentGrade || g.grade === currentGrade)
+    .filter(g => (!currentGrade || g.grade === currentGrade) && (!currentExam || !g.exam || g.exam === currentExam))
     .filter(g => selectedCount === "all" || g.questionCount === Number(selectedCount))
     .slice(-10);
   const labels = recentGames.map((g, i) => i + 1);
@@ -503,8 +621,10 @@ function renderChart() {
 function renderRanking() {
   if (!bestListEl || !worstListEl) return;
   const currentGrade = gradeSelect ? gradeSelect.value : null;
+  const currentExam = examSelect ? examSelect.value : null;
   updateStatsTitles(currentGrade);
-  const gradeStats = (currentGrade && subjectStats[currentGrade]) ? subjectStats[currentGrade] : {};
+  const key = getGradeKey(currentGrade, currentExam);
+  const gradeStats = subjectStats[key] || {};
 
   const entries = Object.entries(gradeStats).map(([name, stat]) => ({
     name,
@@ -540,105 +660,13 @@ function renderRanking() {
   createList(worst, worstListEl);
 }
 
-function renderDictionary() {
-  if (!dictionaryListEl) return;
-
-  const currentGrade = gradeSelect ? gradeSelect.value : null;
-  const gradeLabel = currentGrade || "";
-  if (dictionaryTitleEl) {
-    dictionaryTitleEl.textContent = `📚 勘定科目図鑑${gradeLabel ? " (" + gradeLabel + ")" : ""}`;
-  }
-
-  if (!currentGrade) {
-    dictionaryListEl.innerHTML = "<li><span class='ranking-name'>級を選択してください</span></li>";
-    return;
-  }
-
-  const gradeAccounts = allAccounts.filter(a => a.grade === currentGrade);
-  const gradeStats = subjectStats[currentGrade] || {};
-  const gradeMemory = subjectMemory[currentGrade] || {};
-
-  const entries = gradeAccounts.map(acc => {
-    const stat = gradeStats[acc.name] || { correct: 0, total: 0 };
-    const mem = gradeMemory[acc.name];
-    const total = stat.total || 0;
-    const correct = stat.correct || 0;
-    const rate = total > 0 ? Math.round((correct / total) * 100) : null;
-    const lastSeen = mem && mem.lastSeen ? new Date(mem.lastSeen) : null;
-
-    return {
-      name: acc.name,
-      typeLabel: TYPE_LABELS[acc.type] || acc.type,
-      correct,
-      total,
-      rate,
-      lastSeen,
-    };
-  });
-
-  entries.sort((a, b) => a.name.localeCompare(b.name, "ja"));
-
-  dictionaryListEl.innerHTML = "";
-
-  if (entries.length === 0) {
-    dictionaryListEl.innerHTML = "<li><span class='ranking-name'>この級の科目がありません</span></li>";
-    return;
-  }
-
-  entries.forEach((entry) => {
-    const li = document.createElement("li");
-
-    const left = document.createElement("div");
-    left.className = "dictionary-row-main";
-    left.innerHTML = `<span class="ranking-name">${entry.name}</span>
-                      <span class="dictionary-type">[${entry.typeLabel}]</span>`;
-
-    const right = document.createElement("div");
-    right.className = "dictionary-right";
-
-    let badge = null;
-    if (entry.total === 0) {
-      badge = document.createElement("span");
-      badge.className = "badge-new";
-      badge.textContent = "未学習";
-    } else if (entry.total >= 3 && entry.rate !== null && entry.rate >= 80) {
-      badge = document.createElement("span");
-      badge.className = "badge-master";
-      badge.textContent = "マスター";
-    }
-
-    const statLine = document.createElement("div");
-    statLine.className = "dictionary-meta";
-
-    if (entry.total === 0) {
-      statLine.textContent = "まだ出題されていません";
-    } else {
-      statLine.textContent = `正解 ${entry.correct}/${entry.total}` + (entry.rate !== null ? ` (${entry.rate}%)` : "");
-    }
-
-    const lastLine = document.createElement("div");
-    lastLine.className = "dictionary-meta";
-    if (entry.lastSeen) {
-      lastLine.textContent = `最終出題: ${entry.lastSeen.toLocaleDateString("ja-JP")}`;
-    } else {
-      lastLine.textContent = "";
-    }
-
-    if (badge) right.appendChild(badge);
-    right.appendChild(statLine);
-    if (lastLine.textContent) right.appendChild(lastLine);
-
-    li.appendChild(left);
-    li.appendChild(right);
-    dictionaryListEl.appendChild(li);
-  });
-}
 
 // 最新版: CSVの並び順を保持し、種別ごとにまとめる
 function renderDictionary() {
   if (!dictionaryListEl) return;
 
   const currentGrade = gradeSelect ? gradeSelect.value : null;
+  const currentExam = examSelect ? examSelect.value : null;
   const gradeLabel = currentGrade || "";
   if (dictionaryTitleEl) {
     dictionaryTitleEl.textContent = `📚 勘定科目図鑑${gradeLabel ? " (" + gradeLabel + ")" : ""}`;
@@ -649,9 +677,10 @@ function renderDictionary() {
     return;
   }
 
-  const gradeAccounts = allAccounts.filter((a) => a.grade === currentGrade);
-  const gradeStats = subjectStats[currentGrade] || {};
-  const gradeMemory = subjectMemory[currentGrade] || {};
+  const gradeAccounts = allAccounts.filter((a) => a.grade === currentGrade && (!currentExam || a.exam === currentExam));
+  const key = getGradeKey(currentGrade, currentExam);
+  const gradeStats = subjectStats[key] || {};
+  const gradeMemory = subjectMemory[key] || {};
 
   const entriesByType = {};
   gradeAccounts.forEach((acc) => {
@@ -664,6 +693,7 @@ function renderDictionary() {
 
     const entry = {
       name: acc.name,
+      yomi: acc.yomi,
       type: acc.type,
       typeLabel: TYPE_LABELS[acc.type] || acc.type,
       correct,
@@ -684,7 +714,7 @@ function renderDictionary() {
     totalEntries += list.length;
 
     const header = document.createElement("li");
-    header.className = "dictionary-group";
+    header.className = `dictionary-group type-${typeKey}`;
     header.textContent = TYPE_LABELS[typeKey] || typeKey;
     dictionaryListEl.appendChild(header);
 
@@ -693,8 +723,14 @@ function renderDictionary() {
 
       const left = document.createElement("div");
       left.className = "dictionary-row-main";
-      left.innerHTML = `<span class="ranking-name">${entry.name}</span>
-                        <span class="dictionary-type">[${entry.typeLabel}]</span>`;
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "ranking-name";
+      nameSpan.textContent = formatNameWithYomi(entry.name, entry.yomi);
+      const typeSpan = document.createElement("span");
+      typeSpan.className = "dictionary-type";
+      typeSpan.textContent = `[${entry.typeLabel}]`;
+      left.appendChild(nameSpan);
+      left.appendChild(typeSpan);
 
       const right = document.createElement("div");
       right.className = "dictionary-right";
@@ -998,6 +1034,34 @@ function setBoardEnabled(enabled) {
   if (skipButton) skipButton.disabled = !enabled;
 }
 
+function setCardText(text) {
+  if (accountCardTextEl) {
+    accountCardTextEl.textContent = text;
+  } else {
+    cardEl.textContent = text;
+  }
+}
+
+function isYomiEnabled() {
+  return showYomiCheckbox ? showYomiCheckbox.checked : false;
+}
+
+function setYomiText(account) {
+  if (!accountYomiEl) return;
+  if (account && isYomiEnabled() && account.yomi) {
+    accountYomiEl.textContent = account.yomi;
+    accountYomiEl.hidden = false;
+  } else {
+    accountYomiEl.textContent = "";
+    accountYomiEl.hidden = true;
+  }
+}
+
+function formatNameWithYomi(name, yomi) {
+  if (isYomiEnabled() && yomi) return `${name} (${yomi})`;
+  return name;
+}
+
 function resetGameState() {
   queue = [];
   currentAccount = null;
@@ -1007,8 +1071,9 @@ function resetGameState() {
   questionGoal = 0;
   currentStreak = 0;
 
-  cardEl.textContent = "---";
+  setCardText("---");
   cardEl.classList.remove("pop-in");
+  setYomiText(null);
 
   questionCountEl.textContent = "0";
   correctCountEl.textContent = "0";
@@ -1026,7 +1091,8 @@ function nextAccount() {
     return;
   }
   currentAccount = queue.shift();
-  cardEl.textContent = currentAccount.name;
+  setCardText(currentAccount.name);
+  setYomiText(currentAccount);
   cardEl.classList.remove("pop-in");
   void cardEl.offsetWidth;
   cardEl.classList.add("pop-in");
@@ -1042,9 +1108,10 @@ function shuffle(array) {
   return clone;
 }
 
-function weightedSample(pool, count, grade) {
+function weightedSample(pool, count, grade, exam) {
   const now = Date.now();
-  const mem = (grade && subjectMemory[grade]) ? subjectMemory[grade] : {};
+  const key = getGradeKey(grade, exam);
+  const mem = (key && subjectMemory[key]) ? subjectMemory[key] : {};
   const unseen = [];
   const seenWeights = [];
 
@@ -1163,15 +1230,23 @@ function evaluateAnswer(selectedType, zone = null) {
   if (isReviewMode) {
     if (isCorrect) {
       // 復習モードで正解したらリストから削除
-      reviewQueue = reviewQueue.filter(item => !(item.name === currentAccount.name && (item.grade === activeGrade || item.grade === null)));
+      reviewQueue = reviewQueue.filter(item =>
+        !(item.name === currentAccount.name &&
+          (item.grade === activeGrade || item.grade === null) &&
+          (!item.exam || item.exam === activeExam))
+      );
     }
     // 復習モードで間違えたら... そのまま残る（何もしない）
   } else {
     if (!isCorrect && selectedType !== "skip") {
       // 通常モードで間違えたらリストに追加（重複なし）
-      const exists = reviewQueue.some(item => item.name === currentAccount.name && item.grade === activeGrade);
+      const exists = reviewQueue.some(item =>
+        item.name === currentAccount.name &&
+        item.grade === activeGrade &&
+        (!item.exam || item.exam === activeExam)
+      );
       if (!exists) {
-        reviewQueue.push({ name: currentAccount.name, grade: activeGrade });
+        reviewQueue.push({ name: currentAccount.name, grade: activeGrade, exam: activeExam });
       }
     }
   }
@@ -1293,16 +1368,21 @@ function startGame(selectedGrade, questionCount, isReview = false) {
 
   let pool = [];
   isReviewMode = isReview;
+  const selectedExam = examSelect ? examSelect.value : null;
   const targetGrade = isReviewMode
     ? (selectedGrade || (gradeSelect ? gradeSelect.value : null))
     : selectedGrade;
+  activeExam = selectedExam;
 
   if (isReviewMode) {
     // 復習モード: reviewQueueにある科目のみ
     pool = allAccounts.filter(item =>
       item.grade === targetGrade &&
+      (!selectedExam || item.exam === selectedExam) &&
       reviewQueue.some(entry =>
-        entry.name === item.name && (entry.grade === targetGrade || entry.grade === null)
+        entry.name === item.name &&
+        (entry.grade === targetGrade || entry.grade === null) &&
+        (!entry.exam || entry.exam === selectedExam)
       )
     );
     if (pool.length === 0) {
@@ -1312,16 +1392,16 @@ function startGame(selectedGrade, questionCount, isReview = false) {
     questionCount = pool.length; // 全て出題
   } else {
     // 通常モード
-    pool = allAccounts.filter((item) => item.grade === selectedGrade);
+    pool = allAccounts.filter((item) => item.grade === selectedGrade && (!selectedExam || item.exam === selectedExam));
     if (pool.length < questionCount) {
-      updateFeedback(`${selectedGrade} の問題が足りません（${pool.length} 件）。`, "wrong");
+      updateFeedback(`${selectedExam || ""} ${selectedGrade} の問題が足りません（${pool.length} 件）。`, "wrong");
       return;
     }
   }
 
   answersLog = [];
   questionGoal = questionCount;
-  queue = isReviewMode ? shuffle(pool).slice(0, questionGoal) : weightedSample(pool, questionGoal, targetGrade);
+  queue = isReviewMode ? shuffle(pool).slice(0, questionGoal) : weightedSample(pool, questionGoal, targetGrade, selectedExam);
   totalCount = 0;
   correctCount = 0;
   locked = false;
@@ -1359,16 +1439,19 @@ function startGame(selectedGrade, questionCount, isReview = false) {
 
 function finishGame() {
   const finishedGrade = activeGrade;
+  const finishedExam = activeExam;
   const durationMs = startTimestamp ? Date.now() - startTimestamp : 0;
   const avgSeconds = questionGoal > 0 ? (durationMs / questionGoal) / 1000 : null;
   stopTimer();
   updateFeedback("お疲れさまでした！結果を表示します。", "info");
-  cardEl.textContent = "FINISH";
+  setCardText("FINISH");
+  setYomiText(null);
   setBoardEnabled(false);
   currentAccount = null;
   lastFinishedGrade = finishedGrade;
   lastFinishedQuestionGoal = questionGoal;
   activeGrade = null;
+  activeExam = null;
   showResultSummary(finishedGrade, durationMs);
   updateMissionProgressGame(avgSeconds);
 
@@ -1377,6 +1460,7 @@ function finishGame() {
     const accuracy = questionGoal > 0 ? Math.round((correctCount / questionGoal) * 100) : 0;
     gameHistory.push({
       timestamp: Date.now(),
+      exam: finishedExam,
       grade: finishedGrade,
       accuracy: accuracy,
       time: durationMs,
@@ -1527,6 +1611,24 @@ startButtons.forEach((button) => {
   });
 });
 
+if (examSelect) {
+  examSelect.addEventListener("change", () => {
+    const grades = getGradesForExam(examSelect.value);
+    setupGrades(grades);
+    updateReviewButtonState();
+    if (statsOverlay && !statsOverlay.hidden) {
+      renderChart();
+      renderRanking();
+      renderDictionary();
+      renderAchievements();
+      updateMissionUI();
+      renderMissionCalendar();
+    } else {
+      renderDictionary();
+    }
+  });
+}
+
 if (gradeSelect) {
   gradeSelect.addEventListener("change", () => {
     updateReviewButtonState();
@@ -1538,6 +1640,14 @@ if (gradeSelect) {
       updateMissionUI();
       renderMissionCalendar();
     }
+    setYomiText(currentAccount);
+  });
+}
+
+if (showYomiCheckbox) {
+  showYomiCheckbox.addEventListener("change", () => {
+    setYomiText(currentAccount);
+    renderDictionary();
   });
 }
 
