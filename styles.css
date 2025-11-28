@@ -707,6 +707,10 @@ header h1 {
   min-width: 240px;
 }
 
+.stats-calendar {
+  background: #fff;
+}
+
 .stats-col {
   flex: 1;
   min-width: 280px;
@@ -777,6 +781,52 @@ header h1 {
 
 .achievement-empty {
   color: #94a3b8;
+}
+
+.calendar-header {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-weight: 800;
+  color: #475569;
+  margin-bottom: 0.5rem;
+  gap: 0.5rem;
+}
+
+.calendar-nav {
+  padding: 0.2rem 0.6rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  min-width: 2.2rem;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.calendar-day {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  text-align: center;
+  padding: 6px 0;
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.calendar-day.today {
+  border-color: #0ea5e9;
+  color: #0ea5e9;
+  font-weight: 800;
+}
+
+.calendar-day.done {
+  background: #dcfce7;
+  border-color: #22c55e;
+  color: #166534;
+  font-weight: 800;
 }
 
 /* 危険なアクションボタン */
