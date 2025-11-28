@@ -61,6 +61,10 @@ const dictionaryListEl = document.getElementById("dictionary-list");
 const dictionaryTitleEl = document.getElementById("dictionary-title");
 const missionTextEl = document.getElementById("mission-text");
 const achievementListEl = document.getElementById("achievement-list");
+const calendarGridEl = document.getElementById("mission-calendar");
+const calendarMonthEl = document.getElementById("calendar-month");
+const calendarPrevEl = document.getElementById("calendar-prev");
+const calendarNextEl = document.getElementById("calendar-next");
 const clearDataButton = document.getElementById("clear-data-button");
 const confirmOverlay = document.getElementById("confirm-overlay");
 const confirmOkButton = document.getElementById("confirm-ok");
@@ -89,6 +93,8 @@ let subjectMemory = { "3級": {}, "2級": {} }; // 科目ごとの最終出題�
 let accountsLoaded = false;
 let currentStreak = 0;
 let missionState = { date: null, type: null, target: 0, progress: 0, done: false, description: "" };
+let missionCompletionDays = [];
+let calendarView = { year: null, month: null }; // 月送り用
 
 // 新機能用状態
 let isReviewMode = false;
@@ -209,6 +215,14 @@ function loadData() {
       }
     }
 
+    const savedMissionDays = localStorage.getItem("ac_game_mission_days");
+    if (savedMissionDays) {
+      const parsedDays = JSON.parse(savedMissionDays);
+      if (Array.isArray(parsedDays)) {
+        missionCompletionDays = parsedDays;
+      }
+    }
+
     updateReviewButtonState();
   } catch (e) {
     console.error("Save data load failed", e);
@@ -221,6 +235,7 @@ function saveData() {
   localStorage.setItem("ac_game_stats", JSON.stringify(subjectStats));
   localStorage.setItem("ac_game_memory", JSON.stringify(subjectMemory));
   localStorage.setItem("ac_game_mission", JSON.stringify(missionState));
+  localStorage.setItem("ac_game_mission_days", JSON.stringify(missionCompletionDays));
   updateReviewButtonState();
 }
 
@@ -250,11 +265,13 @@ function executeClearData() {
   localStorage.removeItem("ac_game_stats");
   localStorage.removeItem("ac_game_memory");
   localStorage.removeItem("ac_game_mission");
+  localStorage.removeItem("ac_game_mission_days");
   reviewQueue = [];
   gameHistory = [];
   subjectStats = { "3級": {}, "2級": {} };
   subjectMemory = { "3級": {}, "2級": {} };
   missionState = { date: null, type: null, target: 0, progress: 0, done: false, description: "" };
+  missionCompletionDays = [];
   updateReviewButtonState();
 
   // 画面を閉じずに、その場でグラフとランキングを更新（クリア）する
@@ -304,6 +321,7 @@ function showStats() {
   renderDictionary();
   renderAchievements();
   updateMissionUI();
+  renderMissionCalendar();
 }
 
 function hideStats() {
@@ -650,6 +668,7 @@ function ensureDailyMission() {
   const today = new Date().toISOString().slice(0, 10);
   if (missionState.date === today && missionState.type) {
     updateMissionUI();
+    renderMissionCalendar();
     return;
   }
   const missionPool = [
@@ -688,8 +707,13 @@ function updateMissionProgressAnswer(isCorrect, correctType) {
   if (missionState.type !== "streak5" && missionState.progress >= missionState.target) {
     missionState.done = true;
   }
+  if (missionState.done) {
+    const today = missionState.date || new Date().toISOString().slice(0, 10);
+    if (!missionCompletionDays.includes(today)) missionCompletionDays.push(today);
+  }
   saveData();
   updateMissionUI();
+  renderMissionCalendar();
 }
 
 function updateMissionProgressGame(avgSecondsPerQuestion) {
@@ -697,10 +721,13 @@ function updateMissionProgressGame(avgSecondsPerQuestion) {
   if (missionState.type === "time-clear" && avgSecondsPerQuestion !== null) {
     if (avgSecondsPerQuestion <= missionState.target) {
       missionState.done = true;
+      const today = missionState.date || new Date().toISOString().slice(0, 10);
+      if (!missionCompletionDays.includes(today)) missionCompletionDays.push(today);
     }
   }
   saveData();
   updateMissionUI();
+  renderMissionCalendar();
 }
 
 function updateMissionUI() {
@@ -713,6 +740,40 @@ function updateMissionUI() {
     ? (missionState.done ? "達成！" : `目標: ${missionState.target}秒以内 / 未達`)
     : `${Math.min(missionState.progress, missionState.target)}/${missionState.target}`;
   missionTextEl.textContent = `${missionState.description} ${missionState.done ? "✅ 達成" : `(${progressText})`}`;
+}
+
+function renderMissionCalendar() {
+  if (!calendarGridEl) return;
+  const now = new Date();
+  const viewYear = calendarView.year ?? now.getFullYear();
+  const viewMonth = calendarView.month ?? now.getMonth(); // 0-based
+  const year = viewYear;
+  const month = viewMonth;
+  if (calendarMonthEl) {
+    calendarMonthEl.textContent = `${year}年 ${month + 1}月`;
+  }
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const completedSet = new Set(missionCompletionDays || []);
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  calendarGridEl.innerHTML = "";
+  for (let i = 0; i < firstDay; i++) {
+    const filler = document.createElement("div");
+    filler.className = "calendar-day";
+    filler.textContent = "";
+    calendarGridEl.appendChild(filler);
+  }
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const cell = document.createElement("div");
+    cell.className = "calendar-day";
+    if (completedSet.has(dateStr)) cell.classList.add("done");
+    if (dateStr === todayStr) cell.classList.add("today");
+    cell.textContent = d;
+    calendarGridEl.appendChild(cell);
+  }
 }
 
 function calcPlayStreakDays(history) {
@@ -1381,6 +1442,7 @@ if (gradeSelect) {
       renderDictionary();
       renderAchievements();
       updateMissionUI();
+      renderMissionCalendar();
     }
   });
 }
@@ -1455,4 +1517,23 @@ if (exportButton) {
 resetGameState();
 loadData(); // データ読み込み
 ensureDailyMission();
+renderMissionCalendar();
 loadAccounts();
+
+if (calendarPrevEl) {
+  calendarPrevEl.addEventListener("click", () => {
+    const base = calendarView.month === null ? new Date() : new Date(calendarView.year, calendarView.month, 1);
+    base.setMonth(base.getMonth() - 1);
+    calendarView = { year: base.getFullYear(), month: base.getMonth() };
+    renderMissionCalendar();
+  });
+}
+
+if (calendarNextEl) {
+  calendarNextEl.addEventListener("click", () => {
+    const base = calendarView.month === null ? new Date() : new Date(calendarView.year, calendarView.month, 1);
+    base.setMonth(base.getMonth() + 1);
+    calendarView = { year: base.getFullYear(), month: base.getMonth() };
+    renderMissionCalendar();
+  });
+}
