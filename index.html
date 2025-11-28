@@ -5,9 +5,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#fdfbf7" />
-  <link rel="manifest" href="manifest.json" />
   <title>勘定科目分類ゲーム</title>
   <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="icons/app-icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap"
@@ -24,11 +24,16 @@
     <section class="control-panel">
       <div class="panel-inner">
         <form id="grade-form">
+          <label for="exam-select">試験</label>
+          <select id="exam-select" required>
+            <option value="日商" selected>日商</option>
+          </select>
           <label for="grade-select">級を選択</label>
           <select id="grade-select" required>
             <option value="3級" selected>3級</option>
             <option value="2級">2級</option>
           </select>
+          <label class="yomi-toggle"><input type="checkbox" id="show-yomi"> よみを表示</label>
         </form>
         <div class="start-buttons">
           <button type="button" class="start-button push-btn" data-count="10" disabled>10問</button>
@@ -58,7 +63,10 @@
 
       <section class="board">
         <div class="card-area">
-          <div id="account-card" class="account-card pop-in">---</div>
+          <div id="account-card" class="account-card pop-in">
+            <div id="account-yomi" class="account-yomi"></div>
+            <div id="account-card-text">---</div>
+          </div>
           <button id="skip-button" type="button" class="skip-btn" disabled>パス</button>
         </div>
 
