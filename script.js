@@ -506,6 +506,7 @@ function showStats() {
   statsOverlay.hidden = false;
   setTimeout(() => statsOverlay.classList.add("visible"), 10);
 
+  ensureDailyMission(); // ミッションが未生成の場合でもここで確実に生成
   renderChart();
   renderRanking();
   renderDictionary();
@@ -529,7 +530,7 @@ function renderChart() {
   const currentGrade = gradeSelect ? gradeSelect.value : null;
   const currentExam = examSelect ? examSelect.value : null;
   const selectedCount = questionFilterSelect ? questionFilterSelect.value : "all";
-  updateStatsTitles(currentGrade);
+  updateStatsTitles(currentGrade, currentExam);
   const recentGames = gameHistory
     .filter(g => (!currentGrade || g.grade === currentGrade) && (!currentExam || !g.exam || g.exam === currentExam))
     .filter(g => selectedCount === "all" || g.questionCount === Number(selectedCount))
@@ -622,7 +623,7 @@ function renderRanking() {
   if (!bestListEl || !worstListEl) return;
   const currentGrade = gradeSelect ? gradeSelect.value : null;
   const currentExam = examSelect ? examSelect.value : null;
-  updateStatsTitles(currentGrade);
+  updateStatsTitles(currentGrade, currentExam);
   const key = getGradeKey(currentGrade, currentExam);
   const gradeStats = subjectStats[key] || {};
 
@@ -956,8 +957,11 @@ function renderAchievements() {
   });
 }
 
-function updateStatsTitles(gradeLabel) {
-  const suffix = gradeLabel ? ` (${gradeLabel})` : "";
+function updateStatsTitles(gradeLabel, examLabel) {
+  const suffixParts = [];
+  if (examLabel) suffixParts.push(examLabel);
+  if (gradeLabel) suffixParts.push(gradeLabel);
+  const suffix = suffixParts.length ? ` (${suffixParts.join(" / ")})` : "";
   if (accuracyTitleEl) accuracyTitleEl.textContent = `${defaultTitles.accuracy}${suffix}`;
   if (timeTitleEl) timeTitleEl.textContent = `${defaultTitles.time}${suffix}`;
   if (bestTitleEl) bestTitleEl.textContent = `${defaultTitles.best}${suffix}`;
