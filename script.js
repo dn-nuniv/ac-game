@@ -73,6 +73,7 @@ const accuracyTitleEl = document.getElementById("accuracy-title");
 const timeTitleEl = document.getElementById("time-title");
 const bestTitleEl = document.getElementById("best-title");
 const worstTitleEl = document.getElementById("worst-title");
+const questionFilterSelect = document.getElementById("question-filter");
 
 // 状態管理
 let allAccounts = [];
@@ -99,7 +100,7 @@ let calendarView = { year: null, month: null }; // 月送り用
 // 新機能用状態
 let isReviewMode = false;
 let reviewQueue = []; // 復習が必要な科目 { name, grade }
-let gameHistory = []; // { date, grade, accuracy, time }
+let gameHistory = []; // { date, grade, accuracy, time, questionCount }
 let accuracyChartInstance = null;
 let timeChartInstance = null;
 const defaultTitles = {
@@ -190,7 +191,23 @@ function loadData() {
     }
 
     const savedHistory = localStorage.getItem("ac_game_history");
-    if (savedHistory) gameHistory = JSON.parse(savedHistory);
+    if (savedHistory) {
+      const parsedHistory = JSON.parse(savedHistory);
+      if (Array.isArray(parsedHistory)) {
+        gameHistory = parsedHistory.map((item) => {
+          const count = item ? (item.questionCount ?? item.count) : null;
+          const normalizedCount = (count !== undefined && count !== null && count !== "")
+            ? Number(count)
+            : null;
+          return {
+            ...item,
+            questionCount: Number.isFinite(normalizedCount) ? normalizedCount : null
+          };
+        });
+      } else {
+        gameHistory = [];
+      }
+    }
 
     const savedStats = localStorage.getItem("ac_game_stats");
     if (savedStats) {
@@ -346,8 +363,12 @@ function renderChart() {
 
   // 過去10回分のみ表示
   const currentGrade = gradeSelect ? gradeSelect.value : null;
+  const selectedCount = questionFilterSelect ? questionFilterSelect.value : "all";
   updateStatsTitles(currentGrade);
-  const recentGames = gameHistory.filter(g => !currentGrade || g.grade === currentGrade).slice(-10);
+  const recentGames = gameHistory
+    .filter(g => !currentGrade || g.grade === currentGrade)
+    .filter(g => selectedCount === "all" || g.questionCount === Number(selectedCount))
+    .slice(-10);
   const labels = recentGames.map((g, i) => i + 1);
   const accuracyData = recentGames.map(g => g.accuracy);
   const timeData = recentGames.map(g => Math.round(g.time / 1000)); // 秒
@@ -1295,7 +1316,8 @@ function finishGame() {
       timestamp: Date.now(),
       grade: finishedGrade,
       accuracy: accuracy,
-      time: durationMs
+      time: durationMs,
+      questionCount: questionGoal
     });
     saveData();
   } else {
@@ -1452,6 +1474,14 @@ if (gradeSelect) {
       renderAchievements();
       updateMissionUI();
       renderMissionCalendar();
+    }
+  });
+}
+
+if (questionFilterSelect) {
+  questionFilterSelect.addEventListener("change", () => {
+    if (statsOverlay && !statsOverlay.hidden) {
+      renderChart();
     }
   });
 }
