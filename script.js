@@ -453,6 +453,7 @@ function setupExams(exams) {
   }
   const grades = getGradesForExam(examSelect ? examSelect.value : null);
   setupGrades(grades);
+  updateStatsButtonLabel();
 }
 
 function setupGrades(grades) {
@@ -473,6 +474,7 @@ function setupGrades(grades) {
     } else {
       gradeSelect.value = grades[0];
     }
+    updateStatsButtonLabel();
   }
 
   grades.forEach((grade) => {
@@ -967,6 +969,14 @@ function updateStatsTitles(gradeLabel, examLabel) {
   if (timeTitleEl) timeTitleEl.textContent = `${defaultTitles.time}${suffix}`;
   if (bestTitleEl) bestTitleEl.textContent = `${defaultTitles.best}${suffix}`;
   if (worstTitleEl) worstTitleEl.textContent = `${defaultTitles.worst}${suffix}`;
+}
+
+function updateStatsButtonLabel() {
+  if (!showStatsButton) return;
+  const exam = examSelect ? examSelect.value : "";
+  const grade = gradeSelect ? gradeSelect.value : "";
+  const labelCore = `${exam || ""}${grade || ""}`;
+  showStatsButton.textContent = labelCore ? `📊 ${labelCore}データ` : "📊 データ";
 }
 
 // --- ゲームロジック ---
@@ -1639,6 +1649,7 @@ if (examSelect) {
     } else {
       renderDictionary();
     }
+    updateStatsButtonLabel();
   });
 }
 
@@ -1654,6 +1665,7 @@ if (gradeSelect) {
       renderMissionCalendar();
     }
     setYomiText(currentAccount);
+    updateStatsButtonLabel();
   });
 }
 
@@ -1736,6 +1748,7 @@ resetGameState();
 loadData(); // データ読み込み
 ensureDailyMission();
 renderMissionCalendar();
+updateStatsButtonLabel();
 loadAccounts();
 
 if (calendarPrevEl) {
