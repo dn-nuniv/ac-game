@@ -22,6 +22,7 @@ const dropZones = document.querySelectorAll(".drop-zone");
 const gradeForm = document.getElementById("grade-form");
 const gradeSelect = document.getElementById("grade-select");
 const startButtons = document.querySelectorAll(".start-button");
+const startButtonsWrapper = document.querySelector(".start-buttons");
 const timerDisplayEl = document.getElementById("timer-display");
 const exportButton = document.getElementById("export-button");
 const csvFallbackSection = document.getElementById("csv-fallback");
@@ -46,10 +47,7 @@ const wrongAnswersSection = document.getElementById("wrong-answers-section");
 const wrongAnswersList = document.getElementById("wrong-answers-list");
 
 // 新機能用DOM
-const reviewButtons = {
-  "3級": document.getElementById("review-3-button"),
-  "2級": document.getElementById("review-2-button"),
-};
+let reviewButtons = {};
 const showStatsButton = document.getElementById("show-stats-button");
 const statsOverlay = document.getElementById("stats-overlay");
 const statsCloseButton = document.getElementById("stats-close");
@@ -89,9 +87,14 @@ let timerInterval = null;
 let startTimestamp = null;
 let lastFinishedGrade = null;
 let lastFinishedQuestionGoal = 0;
-let subjectStats = { "3級": {}, "2級": {} };
-let subjectMemory = { "3級": {}, "2級": {} }; // 科目ごとの最終出題・正誤記録（級別）
+let subjectStats = {}; // { grade: { accountName: {correct,total} } }
+let subjectMemory = {}; // { grade: { accountName: {lastSeen,lastCorrect} } }
 let accountsLoaded = false;
+let availableGrades = [];
+
+if (availableGrades.length === 0 && gradeSelect) {
+  availableGrades = Array.from(gradeSelect.options).map(opt => opt.value).filter(Boolean);
+}
 let currentStreak = 0;
 let missionState = { date: null, type: null, target: 0, progress: 0, done: false, description: "" };
 let missionCompletionDays = [];
@@ -136,6 +139,9 @@ function parseCSV(text) {
 function handleAccountsLoaded(accounts, hintMessage = "") {
   allAccounts = accounts;
   accountsLoaded = true;
+  const grades = Array.from(new Set(allAccounts.map(a => a.grade))).filter(Boolean);
+  availableGrades = grades.length > 0 ? grades : availableGrades;
+  setupGrades(availableGrades);
   if (allAccounts.length === 0) {
     updateFeedback("CSVにデータが見つかりませんでした。", "error");
     setStartButtonsDisabled(true);
@@ -212,25 +218,13 @@ function loadData() {
     const savedStats = localStorage.getItem("ac_game_stats");
     if (savedStats) {
       const parsedStats = JSON.parse(savedStats);
-      if (parsedStats && typeof parsedStats === "object") {
-        // 旧データ: フラットな科目 => grade不明として3級に入れる
-        if (!parsedStats["3級"] && !parsedStats["2級"]) {
-          subjectStats = { "3級": parsedStats, "2級": {} };
-        } else {
-          subjectStats = { "3級": parsedStats["3級"] || {}, "2級": parsedStats["2級"] || {} };
-        }
-      }
+      if (parsedStats && typeof parsedStats === "object") subjectStats = parsedStats;
     }
 
     const savedMemory = localStorage.getItem("ac_game_memory");
     if (savedMemory) {
       const parsed = JSON.parse(savedMemory);
-      if (parsed && typeof parsed === "object") {
-        subjectMemory = {
-          "3級": parsed["3級"] || {},
-          "2級": parsed["2級"] || {}
-        };
-      }
+      if (parsed && typeof parsed === "object") subjectMemory = parsed;
     }
 
     const savedMission = localStorage.getItem("ac_game_mission");
@@ -249,6 +243,14 @@ function loadData() {
       }
     }
 
+    if (availableGrades.length === 0) {
+      const fromStats = Object.keys(subjectStats || {});
+      const fromSelect = gradeSelect ? Array.from(gradeSelect.options).map(opt => opt.value).filter(Boolean) : [];
+      const derived = (fromStats.length ? fromStats : fromSelect).filter(Boolean);
+      availableGrades = derived.length ? Array.from(new Set(derived)) : availableGrades;
+    }
+    if (availableGrades.length > 0) setupGrades(availableGrades);
+
     updateReviewButtonState();
   } catch (e) {
     console.error("Save data load failed", e);
@@ -266,7 +268,7 @@ function saveData() {
 }
 
 function updateReviewButtonState() {
-  ["3級", "2級"].forEach((grade) => {
+  availableGrades.forEach((grade) => {
     const btn = reviewButtons[grade];
     if (!btn) return;
     const count = reviewQueue.filter(item => item.grade === grade || item.grade === null).length;
@@ -294,8 +296,8 @@ function executeClearData() {
   localStorage.removeItem("ac_game_mission_days");
   reviewQueue = [];
   gameHistory = [];
-  subjectStats = { "3級": {}, "2級": {} };
-  subjectMemory = { "3級": {}, "2級": {} };
+  subjectStats = {};
+  subjectMemory = {};
   missionState = { date: null, type: null, target: 0, progress: 0, done: false, description: "" };
   missionCompletionDays = [];
   updateReviewButtonState();
@@ -335,6 +337,51 @@ function updateSubjectMemory(accountName, isCorrect) {
     lastSeen: Date.now(),
     lastCorrect: isCorrect
   };
+}
+
+function setupGrades(grades) {
+  if (!grades || grades.length === 0) return;
+  availableGrades = grades;
+
+  if (gradeSelect) {
+    const current = gradeSelect.value;
+    gradeSelect.innerHTML = "";
+    grades.forEach((grade) => {
+      const opt = document.createElement("option");
+      opt.value = grade;
+      opt.textContent = grade;
+      gradeSelect.appendChild(opt);
+    });
+    if (grades.includes(current)) {
+      gradeSelect.value = current;
+    } else {
+      gradeSelect.value = grades[0];
+    }
+  }
+
+  grades.forEach((grade) => {
+    if (!subjectStats[grade]) subjectStats[grade] = {};
+    if (!subjectMemory[grade]) subjectMemory[grade] = {};
+  });
+
+  buildReviewButtons(grades);
+  updateReviewButtonState();
+}
+
+function buildReviewButtons(grades) {
+  if (!startButtonsWrapper) return;
+  Object.values(reviewButtons).forEach(btn => btn.remove());
+  reviewButtons = {};
+  grades.forEach((grade) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "start-button push-btn review-btn";
+    btn.textContent = `${grade} 復習`;
+    btn.disabled = true;
+    btn.addEventListener("click", () => startGame(grade, 0, true));
+    startButtonsWrapper.appendChild(btn);
+    reviewButtons[grade] = btn;
+  });
 }
 
 function showStats() {
@@ -1531,13 +1578,6 @@ if (resultRetryButton) resultRetryButton.addEventListener("click", () => {
   } else if (lastFinishedGrade) {
     startGame(lastFinishedGrade, lastFinishedQuestionGoal);
   }
-});
-
-Object.entries(reviewButtons).forEach(([grade, btn]) => {
-  if (!btn) return;
-  btn.addEventListener("click", () => {
-    startGame(grade, 0, true);
-  });
 });
 
 if (showStatsButton) showStatsButton.addEventListener("click", showStats);
