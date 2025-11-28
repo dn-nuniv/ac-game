@@ -7,6 +7,7 @@ const TYPE_LABELS = {
   other: "その他",
   skip: "スキップ",
 };
+const TYPE_ORDER = ["asset", "liability", "equity", "revenue", "expense", "other", "skip"];
 
 // DOM要素
 const cardEl = document.getElementById("account-card");
@@ -37,6 +38,8 @@ const resultMessageEl = document.getElementById("result-message");
 const resultScoreEl = document.getElementById("result-score");
 const resultTimeEl = document.getElementById("result-time");
 const resultBreakdownEl = document.getElementById("result-breakdown");
+const resultSpeedCommentEl = document.getElementById("result-speed-comment");
+const resultTimeBonusEl = document.getElementById("result-time-bonus");
 const resultCloseButton = document.getElementById("result-close");
 const resultRetryButton = document.getElementById("result-retry");
 const wrongAnswersSection = document.getElementById("wrong-answers-section");
@@ -54,6 +57,10 @@ const accuracyChartCanvas = document.getElementById("accuracy-chart");
 const timeChartCanvas = document.getElementById("time-chart");
 const bestListEl = document.getElementById("best-list");
 const worstListEl = document.getElementById("worst-list");
+const dictionaryListEl = document.getElementById("dictionary-list");
+const dictionaryTitleEl = document.getElementById("dictionary-title");
+const missionTextEl = document.getElementById("mission-text");
+const achievementListEl = document.getElementById("achievement-list");
 const clearDataButton = document.getElementById("clear-data-button");
 const confirmOverlay = document.getElementById("confirm-overlay");
 const confirmOkButton = document.getElementById("confirm-ok");
@@ -80,6 +87,8 @@ let lastFinishedQuestionGoal = 0;
 let subjectStats = { "3級": {}, "2級": {} };
 let subjectMemory = { "3級": {}, "2級": {} }; // 科目ごとの最終出題・正誤記録（級別）
 let accountsLoaded = false;
+let currentStreak = 0;
+let missionState = { date: null, type: null, target: 0, progress: 0, done: false, description: "" };
 
 // 新機能用状態
 let isReviewMode = false;
@@ -192,6 +201,14 @@ function loadData() {
       }
     }
 
+    const savedMission = localStorage.getItem("ac_game_mission");
+    if (savedMission) {
+      const parsed = JSON.parse(savedMission);
+      if (parsed && typeof parsed === "object") {
+        missionState = { date: null, type: null, target: 0, progress: 0, done: false, description: "", ...parsed };
+      }
+    }
+
     updateReviewButtonState();
   } catch (e) {
     console.error("Save data load failed", e);
@@ -203,6 +220,7 @@ function saveData() {
   localStorage.setItem("ac_game_history", JSON.stringify(gameHistory));
   localStorage.setItem("ac_game_stats", JSON.stringify(subjectStats));
   localStorage.setItem("ac_game_memory", JSON.stringify(subjectMemory));
+  localStorage.setItem("ac_game_mission", JSON.stringify(missionState));
   updateReviewButtonState();
 }
 
@@ -231,10 +249,12 @@ function executeClearData() {
   localStorage.removeItem("ac_game_history");
   localStorage.removeItem("ac_game_stats");
   localStorage.removeItem("ac_game_memory");
+  localStorage.removeItem("ac_game_mission");
   reviewQueue = [];
   gameHistory = [];
   subjectStats = { "3級": {}, "2級": {} };
   subjectMemory = { "3級": {}, "2級": {} };
+  missionState = { date: null, type: null, target: 0, progress: 0, done: false, description: "" };
   updateReviewButtonState();
 
   // 画面を閉じずに、その場でグラフとランキングを更新（クリア）する
@@ -281,6 +301,9 @@ function showStats() {
 
   renderChart();
   renderRanking();
+  renderDictionary();
+  renderAchievements();
+  updateMissionUI();
 }
 
 function hideStats() {
@@ -422,6 +445,343 @@ function renderRanking() {
   createList(worst, worstListEl);
 }
 
+function renderDictionary() {
+  if (!dictionaryListEl) return;
+
+  const currentGrade = gradeSelect ? gradeSelect.value : null;
+  const gradeLabel = currentGrade || "";
+  if (dictionaryTitleEl) {
+    dictionaryTitleEl.textContent = `📚 勘定科目図鑑${gradeLabel ? " (" + gradeLabel + ")" : ""}`;
+  }
+
+  if (!currentGrade) {
+    dictionaryListEl.innerHTML = "<li><span class='ranking-name'>級を選択してください</span></li>";
+    return;
+  }
+
+  const gradeAccounts = allAccounts.filter(a => a.grade === currentGrade);
+  const gradeStats = subjectStats[currentGrade] || {};
+  const gradeMemory = subjectMemory[currentGrade] || {};
+
+  const entries = gradeAccounts.map(acc => {
+    const stat = gradeStats[acc.name] || { correct: 0, total: 0 };
+    const mem = gradeMemory[acc.name];
+    const total = stat.total || 0;
+    const correct = stat.correct || 0;
+    const rate = total > 0 ? Math.round((correct / total) * 100) : null;
+    const lastSeen = mem && mem.lastSeen ? new Date(mem.lastSeen) : null;
+
+    return {
+      name: acc.name,
+      typeLabel: TYPE_LABELS[acc.type] || acc.type,
+      correct,
+      total,
+      rate,
+      lastSeen,
+    };
+  });
+
+  entries.sort((a, b) => a.name.localeCompare(b.name, "ja"));
+
+  dictionaryListEl.innerHTML = "";
+
+  if (entries.length === 0) {
+    dictionaryListEl.innerHTML = "<li><span class='ranking-name'>この級の科目がありません</span></li>";
+    return;
+  }
+
+  entries.forEach((entry) => {
+    const li = document.createElement("li");
+
+    const left = document.createElement("div");
+    left.className = "dictionary-row-main";
+    left.innerHTML = `<span class="ranking-name">${entry.name}</span>
+                      <span class="dictionary-type">[${entry.typeLabel}]</span>`;
+
+    const right = document.createElement("div");
+    right.className = "dictionary-right";
+
+    let badge = null;
+    if (entry.total === 0) {
+      badge = document.createElement("span");
+      badge.className = "badge-new";
+      badge.textContent = "未学習";
+    } else if (entry.total >= 3 && entry.rate !== null && entry.rate >= 80) {
+      badge = document.createElement("span");
+      badge.className = "badge-master";
+      badge.textContent = "マスター";
+    }
+
+    const statLine = document.createElement("div");
+    statLine.className = "dictionary-meta";
+
+    if (entry.total === 0) {
+      statLine.textContent = "まだ出題されていません";
+    } else {
+      statLine.textContent = `正解 ${entry.correct}/${entry.total}` + (entry.rate !== null ? ` (${entry.rate}%)` : "");
+    }
+
+    const lastLine = document.createElement("div");
+    lastLine.className = "dictionary-meta";
+    if (entry.lastSeen) {
+      lastLine.textContent = `最終出題: ${entry.lastSeen.toLocaleDateString("ja-JP")}`;
+    } else {
+      lastLine.textContent = "";
+    }
+
+    if (badge) right.appendChild(badge);
+    right.appendChild(statLine);
+    if (lastLine.textContent) right.appendChild(lastLine);
+
+    li.appendChild(left);
+    li.appendChild(right);
+    dictionaryListEl.appendChild(li);
+  });
+}
+
+// 最新版: CSVの並び順を保持し、種別ごとにまとめる
+function renderDictionary() {
+  if (!dictionaryListEl) return;
+
+  const currentGrade = gradeSelect ? gradeSelect.value : null;
+  const gradeLabel = currentGrade || "";
+  if (dictionaryTitleEl) {
+    dictionaryTitleEl.textContent = `📚 勘定科目図鑑${gradeLabel ? " (" + gradeLabel + ")" : ""}`;
+  }
+
+  if (!currentGrade) {
+    dictionaryListEl.innerHTML = "<li><span class='ranking-name'>級を選択してください</span></li>";
+    return;
+  }
+
+  const gradeAccounts = allAccounts.filter((a) => a.grade === currentGrade);
+  const gradeStats = subjectStats[currentGrade] || {};
+  const gradeMemory = subjectMemory[currentGrade] || {};
+
+  const entriesByType = {};
+  gradeAccounts.forEach((acc) => {
+    const stat = gradeStats[acc.name] || { correct: 0, total: 0 };
+    const mem = gradeMemory[acc.name];
+    const total = stat.total || 0;
+    const correct = stat.correct || 0;
+    const rate = total > 0 ? Math.round((correct / total) * 100) : null;
+    const lastSeen = mem && mem.lastSeen ? new Date(mem.lastSeen) : null;
+
+    const entry = {
+      name: acc.name,
+      type: acc.type,
+      typeLabel: TYPE_LABELS[acc.type] || acc.type,
+      correct,
+      total,
+      rate,
+      lastSeen,
+    };
+    if (!entriesByType[acc.type]) entriesByType[acc.type] = [];
+    entriesByType[acc.type].push(entry);
+  });
+
+  dictionaryListEl.innerHTML = "";
+  let totalEntries = 0;
+
+  TYPE_ORDER.forEach((typeKey) => {
+    const list = entriesByType[typeKey];
+    if (!list || list.length === 0) return;
+    totalEntries += list.length;
+
+    const header = document.createElement("li");
+    header.className = "dictionary-group";
+    header.textContent = TYPE_LABELS[typeKey] || typeKey;
+    dictionaryListEl.appendChild(header);
+
+    list.forEach((entry) => {
+      const li = document.createElement("li");
+
+      const left = document.createElement("div");
+      left.className = "dictionary-row-main";
+      left.innerHTML = `<span class="ranking-name">${entry.name}</span>
+                        <span class="dictionary-type">[${entry.typeLabel}]</span>`;
+
+      const right = document.createElement("div");
+      right.className = "dictionary-right";
+
+      let badge = null;
+      if (entry.total === 0) {
+        badge = document.createElement("span");
+        badge.className = "badge-new";
+        badge.textContent = "未学習";
+      } else if (entry.total >= 3 && entry.rate !== null && entry.rate >= 80) {
+        badge = document.createElement("span");
+        badge.className = "badge-master";
+        badge.textContent = "マスター";
+      }
+
+      const statLine = document.createElement("div");
+      statLine.className = "dictionary-meta";
+      if (entry.total === 0) {
+        statLine.textContent = "まだ出題されていません";
+      } else {
+        statLine.textContent = `正解 ${entry.correct}/${entry.total}` + (entry.rate !== null ? ` (${entry.rate}%)` : "");
+      }
+
+      const lastLine = document.createElement("div");
+      lastLine.className = "dictionary-meta";
+      if (entry.lastSeen) {
+        lastLine.textContent = `最終出題: ${entry.lastSeen.toLocaleDateString("ja-JP")}`;
+      } else {
+        lastLine.textContent = "";
+      }
+
+      if (badge) right.appendChild(badge);
+      right.appendChild(statLine);
+      if (lastLine.textContent) right.appendChild(lastLine);
+
+      li.appendChild(left);
+      li.appendChild(right);
+      dictionaryListEl.appendChild(li);
+    });
+  });
+
+  if (totalEntries === 0) {
+    dictionaryListEl.innerHTML = "<li><span class='ranking-name'>この級の科目がありません</span></li>";
+  }
+}
+
+function ensureDailyMission() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (missionState.date === today && missionState.type) {
+    updateMissionUI();
+    return;
+  }
+  const missionPool = [
+    { type: "asset-correct", target: 5, description: "資産を5問正解しよう" },
+    { type: "streak5", target: 5, description: "5連続正解を達成しよう" },
+    { type: "total-answers", target: 15, description: "15問こなそう" },
+    { type: "time-clear", target: 5, description: "平均5秒以内でクリアしよう" },
+  ];
+  const pick = missionPool[Math.floor(Math.random() * missionPool.length)];
+  missionState = {
+    date: today,
+    type: pick.type,
+    target: pick.target,
+    progress: 0,
+    done: false,
+    description: pick.description,
+  };
+  saveData();
+  updateMissionUI();
+}
+
+function updateMissionProgressAnswer(isCorrect, correctType) {
+  if (!missionState || missionState.done) return;
+  if (!missionState.type) return;
+
+  if (missionState.type === "asset-correct") {
+    if (isCorrect && correctType === "asset") missionState.progress += 1;
+  } else if (missionState.type === "total-answers") {
+    missionState.progress += 1;
+  } else if (missionState.type === "streak5") {
+    // progressは最大連続数を保持
+    missionState.progress = Math.max(missionState.progress, currentStreak);
+    if (currentStreak >= missionState.target) missionState.done = true;
+  }
+
+  if (missionState.type !== "streak5" && missionState.progress >= missionState.target) {
+    missionState.done = true;
+  }
+  saveData();
+  updateMissionUI();
+}
+
+function updateMissionProgressGame(avgSecondsPerQuestion) {
+  if (!missionState || missionState.done) return;
+  if (missionState.type === "time-clear" && avgSecondsPerQuestion !== null) {
+    if (avgSecondsPerQuestion <= missionState.target) {
+      missionState.done = true;
+    }
+  }
+  saveData();
+  updateMissionUI();
+}
+
+function updateMissionUI() {
+  if (!missionTextEl) return;
+  if (!missionState || !missionState.type) {
+    missionTextEl.textContent = "ミッションなし";
+    return;
+  }
+  const progressText = missionState.type === "time-clear"
+    ? (missionState.done ? "達成！" : `目標: ${missionState.target}秒以内 / 未達`)
+    : `${Math.min(missionState.progress, missionState.target)}/${missionState.target}`;
+  missionTextEl.textContent = `${missionState.description} ${missionState.done ? "✅ 達成" : `(${progressText})`}`;
+}
+
+function calcPlayStreakDays(history) {
+  if (!history || history.length === 0) return 0;
+  const days = Array.from(new Set(history.map(g => {
+    const d = new Date(g.timestamp || g.date || Date.now());
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  }))).sort((a, b) => b - a);
+  let streak = 0;
+  let cursor = days[0];
+  for (let i = 0; i < days.length; i++) {
+    if (i === 0 || days[i] === cursor) {
+      streak += (i === 0) ? 1 : 0;
+      continue;
+    }
+    const diffDays = Math.round((cursor - days[i]) / 86400000);
+    if (diffDays === streak) {
+      streak += 1;
+    } else if (diffDays === 1) {
+      streak += 1;
+      cursor = days[i];
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
+function renderAchievements() {
+  if (!achievementListEl) return;
+  const currentGrade = gradeSelect ? gradeSelect.value : null;
+  const items = [];
+
+  if (currentGrade) {
+    const gradeAccounts = allAccounts.filter(a => a.grade === currentGrade);
+    const stats = subjectStats[currentGrade] || {};
+    ["asset", "liability", "equity", "revenue", "expense"].forEach((typeKey) => {
+      const targets = gradeAccounts.filter(a => a.type === typeKey);
+      if (targets.length === 0) return;
+      const mastered = targets.every(acc => {
+        const st = stats[acc.name] || {};
+        const total = st.total || 0;
+        const rate = total > 0 ? (st.correct / st.total) * 100 : 0;
+        return total >= 3 && rate >= 80;
+      });
+      if (mastered) items.push(`${currentGrade} ${TYPE_LABELS[typeKey]}マスター`);
+    });
+  }
+
+  const streakDays = calcPlayStreakDays(gameHistory);
+  if (streakDays >= 3) items.push(`連続プレイ ${streakDays}日`);
+
+  if (gameHistory.some(g => g.accuracy >= 90)) items.push("ハイスコア(90%+)");
+
+  achievementListEl.innerHTML = "";
+  if (items.length === 0) {
+    const li = document.createElement("li");
+    li.className = "achievement-empty";
+    li.textContent = "まだ称号はありません";
+    achievementListEl.appendChild(li);
+    return;
+  }
+  items.forEach(text => {
+    const li = document.createElement("li");
+    li.textContent = text;
+    achievementListEl.appendChild(li);
+  });
+}
+
 function updateStatsTitles(gradeLabel) {
   const suffix = gradeLabel ? ` (${gradeLabel})` : "";
   if (accuracyTitleEl) accuracyTitleEl.textContent = `${defaultTitles.accuracy}${suffix}`;
@@ -439,6 +799,26 @@ function updateFeedback(text, type = "neutral") {
   else if (type === "wrong") feedbackEl.style.color = "#ef4444";
   else if (type === "info") feedbackEl.style.color = "#0ea5e9";
   else feedbackEl.style.color = "#64748b";
+}
+
+function getComboMessage(streak) {
+  if (streak >= 5) return "🚀 5コンボ！すごい！";
+  if (streak >= 3) return "🔥 3コンボ！";
+  return "";
+}
+
+function getSpeedComment(secondsPerQuestion) {
+  if (secondsPerQuestion === null || Number.isNaN(secondsPerQuestion)) return "";
+  if (secondsPerQuestion < 3) return "超スピード解答！";
+  if (secondsPerQuestion <= 6) return "ちょうど良いペース";
+  return "正確さ重視のプレイですね";
+}
+
+function getTimeBonusText(secondsPerQuestion) {
+  if (secondsPerQuestion === null || Number.isNaN(secondsPerQuestion)) return "";
+  if (secondsPerQuestion < 3) return "⚡ タイムボーナス: 超速クリア！";
+  if (secondsPerQuestion <= 6) return "⏱️ タイムボーナス: ナイスペース";
+  return "";
 }
 
 function setStartButtonsDisabled(disabled) {
@@ -487,6 +867,7 @@ function resetGameState() {
   correctCount = 0;
   locked = false;
   questionGoal = 0;
+  currentStreak = 0;
 
   cardEl.textContent = "---";
   cardEl.classList.remove("pop-in");
@@ -653,6 +1034,77 @@ function evaluateAnswer(selectedType, zone = null) {
   }, 700);
 }
 
+// 最新版 evaluateAnswer: コンボ演出とスピードコメント用
+evaluateAnswer = function (selectedType, zone = null) {
+  if (!currentAccount || locked) return;
+  locked = true;
+  totalCount += 1;
+  questionCountEl.textContent = String(totalCount);
+
+  const isCorrect = selectedType === currentAccount.type;
+  let feedbackText = "";
+
+  if (isCorrect) {
+    correctCount += 1;
+    correctCountEl.textContent = String(correctCount);
+    currentStreak += 1;
+    const comboMessage = getComboMessage(currentStreak);
+    feedbackText = `✅ 正解！${currentAccount.name} は『${TYPE_LABELS[currentAccount.type]}』！`;
+    if (comboMessage) feedbackText += ` ${comboMessage}`;
+    updateFeedback(feedbackText, "correct");
+    if (comboMessage && feedbackEl) {
+      feedbackEl.classList.add("feedback-combo");
+      setTimeout(() => feedbackEl.classList.remove("feedback-combo"), 450);
+    }
+  } else if (selectedType === "skip") {
+    currentStreak = 0;
+    updateFeedback(`⏭ パス！正解は『${TYPE_LABELS[currentAccount.type]}』でした。`, "neutral");
+  } else {
+    currentStreak = 0;
+    updateFeedback(`❌ 残念… ${currentAccount.name} は『${TYPE_LABELS[currentAccount.type]}』です。`, "wrong");
+  }
+
+  answersLog.push({
+    timestamp: new Date().toISOString(),
+    grade: activeGrade,
+    questionNumber: totalCount,
+    account: currentAccount.name,
+    correctType: currentAccount.type,
+    chosenType: selectedType,
+    result: isCorrect ? "correct" : selectedType === "skip" ? "skipped" : "wrong",
+  });
+  if (exportButton) exportButton.disabled = false;
+
+  updateHistory(selectedType, isCorrect);
+  updateSubjectStats(currentAccount.name, isCorrect);
+  updateSubjectMemory(currentAccount.name, isCorrect);
+  updateMissionProgressAnswer(isCorrect, currentAccount.type);
+
+  if (isReviewMode) {
+    if (isCorrect) {
+      reviewQueue = reviewQueue.filter(item => !(item.name === currentAccount.name && (item.grade === activeGrade || item.grade === null)));
+    }
+  } else {
+    if (!isCorrect && selectedType !== "skip") {
+      const exists = reviewQueue.some(item => item.name === currentAccount.name && item.grade === activeGrade);
+      if (!exists) {
+        reviewQueue.push({ name: currentAccount.name, grade: activeGrade });
+      }
+    }
+  }
+  saveData();
+
+  if (zone) zone.classList.add(isCorrect ? "correct" : "wrong");
+
+  setTimeout(() => {
+    if (zone) {
+      zone.classList.remove("correct", "wrong");
+      zone.blur();
+    }
+    nextAccount();
+  }, 700);
+};
+
 function startCountdown(onComplete) {
   if (!countdownOverlay || !countdownNumberEl) {
     onComplete();
@@ -721,6 +1173,7 @@ function startGame(selectedGrade, questionCount, isReview = false) {
   locked = false;
   currentAccount = null;
   activeGrade = targetGrade || selectedGrade;
+  currentStreak = 0;
 
   questionCountEl.textContent = "0";
   correctCountEl.textContent = "0";
@@ -753,6 +1206,7 @@ function startGame(selectedGrade, questionCount, isReview = false) {
 function finishGame() {
   const finishedGrade = activeGrade;
   const durationMs = startTimestamp ? Date.now() - startTimestamp : 0;
+  const avgSeconds = questionGoal > 0 ? (durationMs / questionGoal) / 1000 : null;
   stopTimer();
   updateFeedback("お疲れさまでした！結果を表示します。", "info");
   cardEl.textContent = "FINISH";
@@ -762,6 +1216,7 @@ function finishGame() {
   lastFinishedQuestionGoal = questionGoal;
   activeGrade = null;
   showResultSummary(finishedGrade, durationMs);
+  updateMissionProgressGame(avgSeconds);
 
   // ゲーム結果保存 (復習モードは履歴に残さない、あるいは区別する？今回は通常のみ履歴に残す)
   if (!isReviewMode) {
@@ -822,6 +1277,58 @@ function showResultSummary(gradeLabel, durationMs) {
   setTimeout(() => resultOverlay.classList.add("visible"), 10);
 }
 
+// 最新版 showResultSummary: スピードコメントを追加
+showResultSummary = function (gradeLabel, durationMs) {
+  if (!resultOverlay) return;
+  const accuracy = questionGoal > 0 ? Math.round((correctCount / questionGoal) * 100) : 0;
+  const skipCount = answersLog.filter((entry) => entry.result === "skipped").length;
+  const wrongCount = questionGoal - correctCount - skipCount;
+
+  if (resultMessageEl) resultMessageEl.textContent = `${gradeLabel}コース クリア！`;
+
+  if (resultScoreEl) {
+    resultScoreEl.textContent = `正答率 ${accuracy}% (${correctCount}/${questionGoal}問)`;
+  }
+
+  if (resultTimeEl) resultTimeEl.textContent = `タイム: ${formatDuration(durationMs)} `;
+  if (resultBreakdownEl) resultBreakdownEl.textContent = `ミス ${Math.max(0, wrongCount)} / パス ${skipCount}`;
+  if (resultSpeedCommentEl) {
+    const avgSeconds = questionGoal > 0 ? (durationMs / questionGoal) / 1000 : null;
+    const comment = getSpeedComment(avgSeconds);
+    resultSpeedCommentEl.textContent = comment ? `⏱️ ${comment}` : "";
+  }
+  if (resultTimeBonusEl) {
+    const avgSeconds = questionGoal > 0 ? (durationMs / questionGoal) / 1000 : null;
+    const bonus = getTimeBonusText(avgSeconds);
+    resultTimeBonusEl.textContent = bonus;
+  }
+
+  if (wrongAnswersList && wrongAnswersSection) {
+    wrongAnswersList.innerHTML = "";
+    const wrongEntries = answersLog.filter(entry => entry.result === "wrong");
+
+    if (wrongEntries.length > 0) {
+      wrongAnswersSection.hidden = false;
+      wrongEntries.forEach(entry => {
+        const li = document.createElement("li");
+        li.innerHTML = `<strong>${entry.account}</strong> の 正解: ${TYPE_LABELS[entry.correctType]}`;
+        wrongAnswersList.appendChild(li);
+      });
+    } else {
+      wrongAnswersSection.hidden = true;
+    }
+  }
+
+  const card = resultOverlay.querySelector(".result-card");
+  if (card) {
+    card.classList.remove("bounce-in");
+    void card.offsetWidth;
+    card.classList.add("bounce-in");
+  }
+  resultOverlay.hidden = false;
+  setTimeout(() => resultOverlay.classList.add("visible"), 10);
+};
+
 function hideResultSummary() {
   if (!resultOverlay) return;
   resultOverlay.classList.remove("visible");
@@ -829,6 +1336,8 @@ function hideResultSummary() {
     resultOverlay.hidden = true;
     const card = resultOverlay.querySelector(".result-card");
     if (card) card.classList.remove("bounce-in");
+    if (resultSpeedCommentEl) resultSpeedCommentEl.textContent = "";
+    if (resultTimeBonusEl) resultTimeBonusEl.textContent = "";
   }, 300);
 }
 
@@ -864,7 +1373,16 @@ startButtons.forEach((button) => {
 });
 
 if (gradeSelect) {
-  gradeSelect.addEventListener("change", updateReviewButtonState);
+  gradeSelect.addEventListener("change", () => {
+    updateReviewButtonState();
+    if (statsOverlay && !statsOverlay.hidden) {
+      renderChart();
+      renderRanking();
+      renderDictionary();
+      renderAchievements();
+      updateMissionUI();
+    }
+  });
 }
 
 if (localCsvButton && localCsvInput) {
@@ -936,4 +1454,5 @@ if (exportButton) {
 // 初期化
 resetGameState();
 loadData(); // データ読み込み
+ensureDailyMission();
 loadAccounts();

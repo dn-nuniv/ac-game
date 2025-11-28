@@ -696,6 +696,17 @@ header h1 {
   flex-wrap: wrap;
 }
 
+.stats-meta {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.stats-mini {
+  flex: 1;
+  min-width: 240px;
+}
+
 .stats-col {
   flex: 1;
   min-width: 280px;
@@ -753,6 +764,21 @@ header h1 {
   font-weight: 700;
 }
 
+.mission-text {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.achievement-list li {
+  font-size: 0.9rem;
+}
+
+.achievement-empty {
+  color: #94a3b8;
+}
+
 /* 危険なアクションボタン */
 .danger-text {
   color: #ef4444;
@@ -780,4 +806,77 @@ header h1 {
   background: #ef4444;
   box-shadow: 0 5px 0 #b91c1c;
   color: #fff;
+}
+
+/* 勘定科目図鑑用 */
+
+.stats-dictionary {
+  margin-top: 1rem;
+}
+
+.dictionary-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.dictionary-group {
+  font-weight: 800;
+  color: #94a3b8;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.dictionary-row-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.dictionary-type {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-left: 0.25rem;
+}
+
+.dictionary-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
+
+.dictionary-meta {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+/* バッジ */
+.badge-master,
+.badge-new {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  margin-right: 0.25rem;
+}
+
+.badge-master {
+  background: #bbf7d0;
+  color: #166534;
+}
+
+.badge-new {
+  background: #e0f2fe;
+  color: #1d4ed8;
+}
+
+.speed-comment {
+  margin: 0.2rem 0 0.6rem;
+  font-size: 0.9rem;
+  color: #0ea5e9;
+  font-weight: 700;
+}
+
+.feedback-combo {
+  animation: popIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
