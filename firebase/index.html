@@ -263,9 +263,16 @@
     // Import the functions you need from the SDKs you need
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
     // Firestore
-    import { getFirestore } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js";
-    // TODO: Add SDKs for Firebase products that you want to use
-    // https://firebase.google.com/docs/web/setup#available-libraries
+    import {
+      getFirestore,
+      collection,
+      addDoc,
+      serverTimestamp,
+      doc,
+      setDoc,
+      updateDoc,
+      increment
+    } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js";
 
     // Your web app's Firebase configuration
     const firebaseConfig = {
@@ -285,6 +292,48 @@
     // 既存のscript.jsから使えるようにグローバルへ出しておく
     window.firebaseApp = app;
     window.db = db;
+
+    // Firestoreへのログ保存をグローバルに公開
+    window.saveLogsToFirestore = async function saveLogsToFirestore(summary, rows) {
+      return await addDoc(collection(db, "sessions"), {
+        summary,
+        rows,
+        createdAt: serverTimestamp(),
+      });
+    };
+
+    // 間違えた科目を蓄積する
+    window.updateMistakesFromRows = async function updateMistakesFromRows(summary, rows) {
+      const db = window.db;
+      if (!db) return;
+      const { playerId, exam, grade } = summary || {};
+
+      if (!playerId || !exam || !grade) {
+        console.warn("summary に playerId/exam/grade が足りないため mistakes は更新しません");
+        return;
+      }
+
+      const mistakesCol = collection(db, "mistakes");
+      const wrongRows = (rows || []).filter(r => r && r.result === "wrong");
+
+      for (const row of wrongRows) {
+        const account = row.account;
+        if (!account) continue;
+
+        const idBase = `${playerId}__${exam}__${grade}__${account}`;
+        const docRef = doc(mistakesCol, idBase);
+
+        await setDoc(docRef, {
+          playerId,
+          exam,
+          grade,
+          account,
+          wrongCount: increment(1),
+          seenCount: increment(1),
+          lastWrongAt: serverTimestamp(),
+        }, { merge: true });
+      }
+    };
   </script>
 
 </body>
