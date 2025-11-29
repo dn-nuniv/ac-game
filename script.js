@@ -90,6 +90,7 @@ let questionGoal = 0;
 let timerInterval = null;
 let startTimestamp = null;
 let lastFinishedGrade = null;
+let lastFinishedExam = null;
 let lastFinishedQuestionGoal = 0;
 let subjectStats = {}; // { gradeKey: { accountName: {correct,total} } }
 let subjectMemory = {}; // { gradeKey: { accountName: {lastSeen,lastCorrect} } }
@@ -109,6 +110,17 @@ let currentStreak = 0;
 let missionState = { date: null, type: null, target: 0, progress: 0, done: false, description: "" };
 let missionCompletionDays = [];
 let calendarView = { year: null, month: null }; // 月送り用
+
+// 匿名プレイヤーIDを生成・取得
+function getOrCreatePlayerId() {
+  const key = "acGamePlayerId";
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = "p_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem(key, id);
+  }
+  return id;
+}
 
 // 新機能用状態
 let isReviewMode = false;
@@ -1227,6 +1239,7 @@ function evaluateAnswer(selectedType, zone = null) {
   answersLog.push({
     timestamp: new Date().toISOString(),
     grade: activeGrade,
+    exam: activeExam,
     questionNumber: totalCount,
     account: currentAccount.name,
     correctType: currentAccount.type,
@@ -1311,6 +1324,7 @@ evaluateAnswer = function (selectedType, zone = null) {
   answersLog.push({
     timestamp: new Date().toISOString(),
     grade: activeGrade,
+    exam: activeExam,
     questionNumber: totalCount,
     account: currentAccount.name,
     correctType: currentAccount.type,
@@ -1460,6 +1474,51 @@ function startGame(selectedGrade, questionCount, isReview = false) {
   });
 }
 
+async function logSessionToFirestore(durationMs) {
+  if (!window.saveLogsToFirestore) return;
+  if (!answersLog || answersLog.length === 0) return;
+
+  const total = answersLog.length;
+  const correctCount = answersLog.filter(e => e.result === "correct").length;
+  const wrongCount = answersLog.filter(e => e.result === "wrong").length;
+  const skipCount = answersLog.filter(e => e.result === "skipped").length;
+  const accuracy = total > 0 ? correctCount / total : 0;
+
+  const playerId = getOrCreatePlayerId();
+  const exam = lastFinishedExam || activeExam || null;
+  const summary = {
+    appId: "accounts_quiz",
+    grade: lastFinishedGrade || activeGrade || null,
+    exam,
+    questionCount: total,
+    correctCount,
+    wrongCount,
+    skipCount,
+    accuracy,
+    playerId,
+    mode: isReviewMode ? "review" : "normal",
+  };
+
+  if (typeof durationMs === "number") {
+    summary.durationMs = durationMs;
+  }
+
+  try {
+    await window.saveLogsToFirestore(summary, answersLog);
+    console.log("Session log saved to Firestore", { summary });
+
+    if (window.updateMistakesFromRows) {
+      console.log("Calling updateMistakesFromRows...");
+      await window.updateMistakesFromRows(summary, answersLog);
+      console.log("Mistakes update finished");
+    } else {
+      console.warn("updateMistakesFromRows is NOT defined on window");
+    }
+  } catch (err) {
+    console.error("Failed to save logs or mistakes:", err);
+  }
+}
+
 function finishGame() {
   const finishedGrade = activeGrade;
   const finishedExam = activeExam;
@@ -1472,6 +1531,7 @@ function finishGame() {
   setBoardEnabled(false);
   currentAccount = null;
   lastFinishedGrade = finishedGrade;
+  lastFinishedExam = finishedExam;
   lastFinishedQuestionGoal = questionGoal;
   activeGrade = null;
   activeExam = null;
@@ -1494,6 +1554,7 @@ function finishGame() {
     // 復習モード終了時もデータ保存（reviewQueueの更新のため）
     saveData();
   }
+  logSessionToFirestore(durationMs);
 }
 
 function showResultSummary(gradeLabel, durationMs) {
