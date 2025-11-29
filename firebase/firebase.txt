@@ -1,0 +1,19 @@
+<script type="module" >
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+    apiKey: "AIzaSyAGPO78QvkLDt3FvjhpSqV6OYRm--DMzGg",
+    authDomain: "ac-game-prod.firebaseapp.com",
+    projectId: "ac-game-prod",
+    storageBucket: "ac-game-prod.firebasestorage.app",
+    messagingSenderId: "101943470104",
+    appId: "1:101943470104:web:ed5d08b13f9298b7e27b6d"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+</script>
