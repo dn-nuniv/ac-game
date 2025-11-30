@@ -198,9 +198,9 @@
         <button type="button" id="stats-close" class="ghost-button">閉じる</button>
       </div>
 
-      <div class="stats-content">
-        <div class="chart-filter">
-          <label for="question-filter">出題数</label>
+        <div class="stats-content">
+        <div class="chart-filter" id="chart-filter-wrapper">
+          <label for="question-filter" id="question-filter-label">出題数</label>
           <select id="question-filter">
             <option value="all">全て</option>
             <option value="10">10問</option>
@@ -210,6 +210,10 @@
         </div>
 
         <div class="stats-meta">
+          <div class="stats-col stats-mini">
+            <h3>🏅 プレイヤーステータス</h3>
+            <p id="player-exp-stats">---</p>
+          </div>
           <div class="stats-col stats-mini">
             <h3 id="mission-title">🎯 今日のミッション</h3>
             <p id="mission-text" class="mission-text">読み込み中...</p>

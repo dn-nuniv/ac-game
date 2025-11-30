@@ -980,6 +980,14 @@ header h1 {
   padding-bottom: 2rem;
 }
 
+.chart-filter {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.75rem;
+}
+
 .charts-wrapper {
   display: flex;
   flex-direction: column;
@@ -1086,6 +1094,13 @@ header h1 {
   font-size: 0.9rem;
   color: #475569;
   line-height: 1.4;
+}
+
+#player-exp-stats {
+  margin: 0;
+  color: #0ea5e9;
+  font-weight: 700;
+  font-size: 0.95rem;
 }
 
 .achievement-list li {

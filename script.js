@@ -770,6 +770,7 @@ function showStats() {
   renderAchievements();
   updateMissionUI();
   renderMissionCalendar();
+  updateStatsPlayerStatusBox();
 }
 
 function hideStats() {
@@ -786,9 +787,15 @@ function renderChart() {
   // 過去10回分のみ表示
   const currentGrade = gradeSelect ? gradeSelect.value : null;
   const currentExam = examSelect ? examSelect.value : null;
-  const selectedCount = questionFilterSelect ? questionFilterSelect.value : "all";
+  const isRpgView = currentMode === "rpg";
+  if (questionFilterSelect) {
+    questionFilterSelect.style.display = isRpgView ? "none" : "block";
+  }
+  const selectedCount = isRpgView ? "all" : (questionFilterSelect ? questionFilterSelect.value : "all");
+  const recentModeFiltered = gameHistory
+    .filter(g => (isRpgView ? g.mode === "rpg" : g.mode !== "rpg"));
   updateStatsTitles(currentGrade, currentExam);
-  const recentGames = gameHistory
+  const recentGames = recentModeFiltered
     .filter(g => (!currentGrade || g.grade === currentGrade) && (!currentExam || !g.exam || g.exam === currentExam))
     .filter(g => selectedCount === "all" || g.questionCount === Number(selectedCount))
     .slice(-10);
@@ -1247,10 +1254,15 @@ function updateStatsTitles(gradeLabel, examLabel) {
   if (examLabel) suffixParts.push(examLabel);
   if (gradeLabel) suffixParts.push(gradeLabel);
   const suffix = suffixParts.length ? ` (${suffixParts.join(" / ")})` : "";
+  const filterWrapper = document.getElementById("chart-filter-wrapper");
+  const isRpgView = currentMode === "rpg";
   if (accuracyTitleEl) accuracyTitleEl.textContent = `${defaultTitles.accuracy}${suffix}`;
   if (timeTitleEl) timeTitleEl.textContent = `${defaultTitles.time}${suffix}`;
   if (bestTitleEl) bestTitleEl.textContent = `${defaultTitles.best}${suffix}`;
   if (worstTitleEl) worstTitleEl.textContent = `${defaultTitles.worst}${suffix}`;
+  if (filterWrapper) {
+    filterWrapper.style.display = isRpgView ? "none" : "flex";
+  }
 }
 
 function updateStatsButtonLabel() {
@@ -2133,6 +2145,19 @@ function getExpConfig() {
   return (GAME_CFG && GAME_CFG.exp) || {};
 }
 
+function computeLevelInfo(exp, baseRequired, growthRate) {
+  let level = 1;
+  let threshold = baseRequired;
+  let remainingExp = exp;
+  while (remainingExp >= threshold) {
+    remainingExp -= threshold;
+    level += 1;
+    threshold = Math.round(threshold * growthRate);
+  }
+  const expToNext = Math.max(0, threshold - remainingExp);
+  return { level, expToNext, remainder: remainingExp, nextThreshold: threshold };
+}
+
 function getRecommendedPlayerLevelForWorld(exam, grade, worldLevel) {
   const expCfg = getExpConfig();
   const worldCfg = expCfg.worldRecommendedLevel || {};
@@ -2219,16 +2244,8 @@ function recalcPlayerLevelFromExp() {
 
   Object.keys(playerStatusMap || {}).forEach((key) => {
     const entry = playerStatusMap[key] || { exp: 0, level: 1 };
-    let level = 1;
-    let threshold = baseRequired;
-    let remainingExp = entry.exp || 0;
-
-    while (remainingExp >= threshold) {
-      level += 1;
-      remainingExp -= threshold;
-      threshold = Math.round(threshold * growthRate);
-    }
-    playerStatusMap[key] = { ...entry, level };
+    const info = computeLevelInfo(entry.exp || 0, baseRequired, growthRate);
+    playerStatusMap[key] = { ...entry, level: info.level, exp: entry.exp || 0 };
   });
 }
 
@@ -2244,16 +2261,9 @@ function updatePlayerStatusView() {
   const baseRequired = expCfg.levelUp?.baseRequiredExp ?? 100;
   const growthRate = expCfg.levelUp?.growthRate ?? 1.2;
   const { status } = getCurrentPlayerStatus();
-  let level = status.level || 1;
-  let threshold = baseRequired;
-  let remaining = status.exp || 0;
-
-  // 逆算: 現在レベルの必要量を算出
-  for (let i = 1; i < level; i++) {
-    threshold = Math.round(threshold * growthRate);
-  }
-
-  const expToNext = Math.max(0, threshold - remaining);
+  const info = computeLevelInfo(status.exp || 0, baseRequired, growthRate);
+  const level = info.level || status.level || 1;
+  const expToNext = info.expToNext;
   const examLabel = examSelect ? examSelect.value : "";
   const gradeLabel = gradeSelect ? gradeSelect.value : "";
   const prefix = [examLabel, gradeLabel].filter(Boolean).join(" ");
@@ -2501,10 +2511,24 @@ function finishGame() {
       showLevelUpEffect(latestStatus.level);
     }
   }
+  updateStatsPlayerStatusBox();
   showResultSummary(finishedGrade, durationMs);
   updateMissionProgressGame(avgSeconds);
 }
 
+function updateStatsPlayerStatusBox() {
+  const expBox = document.getElementById("player-exp-stats");
+  if (!expBox) return;
+  const expCfg = getExpConfig();
+  const baseRequired = expCfg.levelUp?.baseRequiredExp ?? 100;
+  const growthRate = expCfg.levelUp?.growthRate ?? 1.2;
+  const exam = examSelect ? examSelect.value : "";
+  const grade = gradeSelect ? gradeSelect.value : "";
+  const { status } = getCurrentPlayerStatus(exam, grade);
+  const info = computeLevelInfo(status.exp || 0, baseRequired, growthRate);
+  const level = info.level || status.level || 1;
+  expBox.textContent = `${exam || "-"} ${grade || ""} Lv.${level} / 累計EXP ${status.exp || 0} / 次Lvまで ${info.expToNext} EXP`;
+}
 function showResultSummary(gradeLabel, durationMs) {
   if (!resultOverlay) return;
   const accuracy = questionGoal > 0 ? Math.round((correctCount / questionGoal) * 100) : 0;
@@ -2516,6 +2540,14 @@ function showResultSummary(gradeLabel, durationMs) {
   // ★ 修正箇所: 点数ではなく「正答率 XX%」と表示するように変更 ★
   if (resultScoreEl) {
     resultScoreEl.textContent = `正答率 ${accuracy}% (${correctCount}/${questionGoal}問)`;
+  }
+
+  if (resultExpEl && lastSessionRecord && !isReviewMode) {
+    const gained = lastSessionRecord.sessionExp ?? 0;
+    const total = lastSessionRecord.totalExpAfter ?? playerStatusMap[getPlayerKey(lastSessionRecord.exam, lastSessionRecord.grade)]?.exp ?? 0;
+    resultExpEl.textContent = `獲得EXP: +${gained}（累計 ${total}）`;
+  } else if (resultExpEl) {
+    resultExpEl.textContent = "";
   }
 
   if (resultTimeEl) resultTimeEl.textContent = `タイム: ${formatDuration(durationMs)} `;
@@ -2559,6 +2591,14 @@ showResultSummary = function (gradeLabel, durationMs) {
 
   if (resultScoreEl) {
     resultScoreEl.textContent = `正答率 ${accuracy}% (${correctCount}/${questionGoal}問)`;
+  }
+
+  if (resultExpEl && lastSessionRecord && !isReviewMode) {
+    const gained = lastSessionRecord.sessionExp ?? 0;
+    const total = lastSessionRecord.totalExpAfter ?? playerStatusMap[getPlayerKey(lastSessionRecord.exam, lastSessionRecord.grade)]?.exp ?? 0;
+    resultExpEl.textContent = `獲得EXP: +${gained}（累計 ${total}）`;
+  } else if (resultExpEl) {
+    resultExpEl.textContent = "";
   }
 
   if (resultExpEl) {
@@ -2665,10 +2705,12 @@ if (examSelect) {
       renderAchievements();
       updateMissionUI();
       renderMissionCalendar();
+      updateStatsPlayerStatusBox();
     } else {
       renderDictionary();
     }
     updateStatsButtonLabel();
+    updatePlayerStatusView();
   });
 }
 
@@ -2683,10 +2725,12 @@ if (gradeSelect) {
       renderAchievements();
       updateMissionUI();
       renderMissionCalendar();
+      updateStatsPlayerStatusBox();
     }
     updateRpgLevelButtonStates();
     setYomiText(currentAccount);
     updateStatsButtonLabel();
+    updatePlayerStatusView();
   });
 }
 
@@ -2806,6 +2850,7 @@ renderMissionCalendar();
 updateStatsButtonLabel();
 updateRpgLevelButtonStates();
 updatePlayerStatusView();
+updateStatsPlayerStatusBox();
 loadAccounts();
 
 if (calendarPrevEl) {
