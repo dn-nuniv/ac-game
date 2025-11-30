@@ -245,12 +245,13 @@ function setMode(mode) {
     updateRpgStartButtonState();
     updateRpgLevelButtonStates();
 
-    updateFeedback(
-      "RPGモードを選択中。ワールドを選んでください。",
-      "info"
-    );
-  }
-  updateRpgLevelButtonStates();
+  updateFeedback(
+    "RPGモードを選択中。ワールドを選んでください。",
+    "info"
+  );
+}
+updateRpgLevelButtonStates();
+updatePlayerStatusView();
 }
 
 // --- RPGスタートボタン（削除予定、互換性のため残す） ---
