@@ -23,6 +23,13 @@
 
     <section class="control-panel">
       <div class="panel-inner">
+        <div id="mode-selection" class="mode-selection">
+          <h2 class="mode-title">モード選択</h2>
+          <div class="mode-buttons">
+            <button type="button" id="mode-all-button" class="start-button push-btn mode-btn">全復習モード</button>
+            <button type="button" id="mode-rpg-button" class="start-button push-btn mode-btn">RPGモード</button>
+          </div>
+        </div>
         <form id="grade-form">
           <label for="exam-select">試験</label>
           <select id="exam-select" required>
@@ -35,10 +42,22 @@
           </select>
           <label class="yomi-toggle"><input type="checkbox" id="show-yomi"> よみ表示</label>
         </form>
+
+        <div id="level-select" class="level-select" hidden>
+          <span class="level-label">ワールド</span>
+          <div class="level-buttons"></div>
+          <button type="button" id="boss-button" class="boss-button locked" hidden>ボス戦</button>
+        </div>
+        <div id="player-status" class="player-status" aria-live="polite">プレイヤーLv.1（次のレベルまで 0 EXP）</div>
+
         <div class="start-buttons">
           <button type="button" class="start-button push-btn" data-count="10" disabled>10問</button>
           <button type="button" class="start-button push-btn" data-count="20" disabled>20問</button>
           <button type="button" class="start-button push-btn" data-count="30" disabled>30問</button>
+        </div>
+
+        <div class="rpg-start-wrapper" hidden>
+          <button type="button" id="rpg-start-button" class="start-button push-btn rpg-start-btn" disabled>スタート</button>
         </div>
       </div>
       <div class="sub-controls">
@@ -57,6 +76,7 @@
         <div class="status-item">残り <span id="question-count">0</span>/<span id="question-target">0</span></div>
         <div class="status-item timer">⏰ <span id="timer-display">00:00</span></div>
         <div class="status-item score">正解 <span id="correct-count">0</span></div>
+        <div id="boss-indicator" class="status-item boss-indicator" hidden>👑 ボス戦</div>
       </section>
 
       <div id="feedback" class="feedback-toast">スタートボタンを押してね！</div>
@@ -152,6 +172,7 @@
         <p id="result-score" class="big-score">---</p>
       </div>
       <p id="result-time">---</p>
+      <p id="result-exp" class="result-exp">---</p>
       <p id="result-breakdown" class="breakdown">---</p>
       <p id="result-speed-comment" class="speed-comment"></p>
       <p id="result-time-bonus" class="speed-comment"></p>
@@ -255,6 +276,7 @@
     </div>
   </div>
 
+  <script src="game-config.js"></script>
   <script src="script.js"></script>
 
   <footer class="app-footer">© Daisuke NAKAMURA</footer>

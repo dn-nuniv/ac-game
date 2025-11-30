@@ -9,6 +9,9 @@ const TYPE_LABELS = {
 };
 const TYPE_ORDER = ["asset", "liability", "equity", "revenue", "expense", "other", "skip"];
 
+// game-config.js から読み込む設定（無ければ空オブジェクト）
+const GAME_CFG = window.ACCOUNTS_GAME_CONFIG || {};
+
 // DOM要素
 const cardEl = document.getElementById("account-card");
 const questionCountEl = document.getElementById("question-count");
@@ -23,13 +26,16 @@ const gradeForm = document.getElementById("grade-form");
 const gradeSelect = document.getElementById("grade-select");
 const examSelect = document.getElementById("exam-select");
 const showYomiCheckbox = document.getElementById("show-yomi");
-const startButtons = document.querySelectorAll(".start-button");
+const playerStatusEl = document.getElementById("player-status");
+const startButtons = document.querySelectorAll(".start-buttons .start-button[data-count]");
 const startButtonsWrapper = document.querySelector(".start-buttons");
 const timerDisplayEl = document.getElementById("timer-display");
 const exportButton = document.getElementById("export-button");
 const csvFallbackSection = document.getElementById("csv-fallback");
 const localCsvButton = document.getElementById("local-csv-button");
 const localCsvInput = document.getElementById("local-csv-input");
+const bossIndicatorEl = document.getElementById("boss-indicator");
+const bossButton = document.getElementById("boss-button");
 
 // カウントダウン要素
 const countdownOverlay = document.getElementById("countdown-overlay");
@@ -40,6 +46,7 @@ const resultOverlay = document.getElementById("result-overlay");
 const resultMessageEl = document.getElementById("result-message");
 const resultScoreEl = document.getElementById("result-score");
 const resultTimeEl = document.getElementById("result-time");
+const resultExpEl = document.getElementById("result-exp");
 const resultBreakdownEl = document.getElementById("result-breakdown");
 const resultSpeedCommentEl = document.getElementById("result-speed-comment");
 const resultTimeBonusEl = document.getElementById("result-time-bonus");
@@ -76,6 +83,13 @@ const timeTitleEl = document.getElementById("time-title");
 const bestTitleEl = document.getElementById("best-title");
 const worstTitleEl = document.getElementById("worst-title");
 const questionFilterSelect = document.getElementById("question-filter");
+const modeAllButton = document.getElementById("mode-all-button");
+const modeRpgButton = document.getElementById("mode-rpg-button");
+const rpgLevelSelect = document.getElementById("level-select");
+const rpgStartButton = document.getElementById("rpg-start-button");
+const rpgStartWrapper = document.querySelector(".rpg-start-wrapper");
+const levelButtonsContainer = document.querySelector(".level-buttons");
+const statusBarEl = document.querySelector(".status-bar");
 
 // 状態管理
 let allAccounts = [];
@@ -123,11 +137,27 @@ function getOrCreatePlayerId() {
 }
 
 // 新機能用状態
+let currentMode = null;   // "all" | "rpg" | null
+let currentLevel = null;   // RPGモード用
+let gamePhase = "idle";    // "idle" | "training" | "boss"
 let isReviewMode = false;
 let reviewQueue = []; // 復習が必要な科目 { name, grade, exam }
-let gameHistory = []; // { date, grade, accuracy, time, questionCount }
+
+// セッション履歴（グラフ等で使う）
+let gameHistory = []; // { timestamp, exam, grade, accuracy, time, questionCount, mode?, level?, phase? }
+
+// レベルごとの進捗集計
+// key: "exam|grade|level" → value: { sessions, totalQuestions, totalCorrect, bestAccuracy, maxQuestionCount, lastPlayedAt, cleared }
+let levelHistory = {};
+
 let accuracyChartInstance = null;
 let timeChartInstance = null;
+let bossFailOverlay = null;
+let bossRemainingQueue = [];
+let playerExp = 0;   // 累計経験値
+let playerLevel = 1; // プレイヤーレベル（最低1）
+let lastSessionRecord = null;
+let currentLevelButtons = [];
 const defaultTitles = {
   accuracy: accuracyTitleEl ? accuracyTitleEl.textContent : "",
   time: timeTitleEl ? timeTitleEl.textContent : "",
@@ -145,6 +175,99 @@ const defaultTitles = {
 //   });
 // }
 
+// --- モード選択 ---
+if (modeAllButton && modeRpgButton) {
+  // 起動時は全復習モード
+  setMode("all");
+
+  modeAllButton.addEventListener("click", () => setMode("all"));
+  modeRpgButton.addEventListener("click", () => setMode("rpg"));
+}
+
+function setMode(mode) {
+  if (currentMode === mode) return;
+  currentMode = mode;
+
+  if (!modeAllButton || !modeRpgButton) return;
+
+  modeAllButton.classList.remove("selected");
+  modeRpgButton.classList.remove("selected");
+
+  if (mode === "all") {
+    modeAllButton.classList.add("selected");
+
+    // レベル選択は隠す
+    if (rpgLevelSelect) {
+      rpgLevelSelect.hidden = true;
+    }
+
+    // 10/20/30問ボタンを表示
+    if (startButtons) {
+      startButtons.forEach((btn) => {
+        btn.style.display = "";
+        btn.disabled = !accountsLoaded;
+      });
+    }
+
+    // RPGスタートボタンを隠す
+    if (rpgStartWrapper) {
+      rpgStartWrapper.hidden = true;
+    }
+
+    // RPGスタートボタンは非表示扱い
+    if (rpgStartButton) {
+      rpgStartButton.disabled = true;
+    }
+
+    updateFeedback(
+      "全復習モードを選択中。問題数を選んでください。",
+      "info"
+    );
+  } else {
+    modeRpgButton.classList.add("selected");
+
+    // レベル選択を表示
+    if (rpgLevelSelect) {
+      rpgLevelSelect.hidden = false;
+    }
+
+    // 10/20/30問ボタンを隠す
+    if (startButtons) {
+      startButtons.forEach((btn) => {
+        btn.style.display = "none";
+      });
+    }
+
+    // RPGスタートボタンを表示（無効化状態）
+    if (rpgStartWrapper) {
+      rpgStartWrapper.hidden = false;
+    }
+    updateRpgStartButtonState();
+    updateRpgLevelButtonStates();
+
+    updateFeedback(
+      "RPGモードを選択中。ワールドを選んでください。",
+      "info"
+    );
+  }
+  updateRpgLevelButtonStates();
+}
+
+// --- RPGスタートボタン（削除予定、互換性のため残す） ---
+if (rpgStartButton) {
+  rpgStartButton.addEventListener("click", () => {
+    if (currentMode !== "rpg" || currentLevel === null) return;
+
+    const selectedGrade = gradeSelect ? gradeSelect.value : null;
+    if (selectedGrade && accountsLoaded) {
+      // RPGモードは常に10問（内部で自動調整される）
+      startGame(selectedGrade, 10, false);
+    } else {
+      updateFeedback("級を選択してください。", "wrong");
+    }
+  });
+}
+
 // --- CSV処理 ---
 
 function parseCSV(text) {
@@ -158,6 +281,7 @@ function parseCSV(text) {
     name: headers.indexOf("name"),
     type: headers.indexOf("type"),
     yomi: headers.indexOf("yomi"),
+    level: headers.indexOf("level"),
   };
 
   return lines
@@ -178,7 +302,8 @@ function parseCSV(text) {
       const name = idx.name >= 0 ? cols[idx.name] : fallback.name;
       const type = idx.type >= 0 ? cols[idx.type] : fallback.type;
       const yomi = idx.yomi >= 0 ? cols[idx.yomi] : fallback.yomi;
-      return { exam, grade, name, type, yomi };
+      const level = idx.level >= 0 ? (Number(cols[idx.level]) || null) : null;
+      return { exam, grade, name, type, yomi, level };
     })
     .filter((row) => row.exam && row.grade && row.name && row.type);
 }
@@ -216,6 +341,7 @@ function handleAccountsLoaded(accounts, hintMessage = "") {
     gradesByExam[ex] = Array.from(gradesByExam[ex]);
   });
   setupExams(availableExams);
+  buildLevelButtonsForSelection(examSelect ? examSelect.value : null, gradeSelect ? gradeSelect.value : null);
   if (allAccounts.length === 0) {
     updateFeedback("CSVにデータが見つかりませんでした。", "error");
     setStartButtonsDisabled(true);
@@ -225,7 +351,9 @@ function handleAccountsLoaded(accounts, hintMessage = "") {
   if (csvFallbackSection) csvFallbackSection.hidden = true; // 読み込み成功したら隠す
   updateFeedback(`${hintMessage} 準備完了！級と問題数を選んでスタート！`, "info");
   setStartButtonsDisabled(false);
-  updateReviewButtonState();
+    updateRpgStartButtonState();
+    updateReviewButtonState();
+    updateRpgLevelButtonStates();
 }
 
 async function loadAccounts() {
@@ -240,6 +368,7 @@ async function loadAccounts() {
     console.warn("Auto-load failed:", error);
     setStartButtonsDisabled(true);
     accountsLoaded = false;
+    updateRpgStartButtonState();
 
     if (csvFallbackSection) {
       csvFallbackSection.hidden = false; // 手動選択ボタンを表示
@@ -288,6 +417,23 @@ function loadData() {
         });
       } else {
         gameHistory = [];
+      }
+    }
+
+    const savedLevelHistory = localStorage.getItem("ac_game_level_history");
+    if (savedLevelHistory) {
+      const parsedLevel = JSON.parse(savedLevelHistory);
+      if (parsedLevel && typeof parsedLevel === "object") {
+        levelHistory = parsedLevel;
+      }
+    }
+
+    const savedPlayerStatus = localStorage.getItem("ac_game_player_status");
+    if (savedPlayerStatus) {
+      const parsedStatus = JSON.parse(savedPlayerStatus);
+      if (parsedStatus && typeof parsedStatus === "object") {
+        if (typeof parsedStatus.exp === "number") playerExp = parsedStatus.exp;
+        if (typeof parsedStatus.level === "number") playerLevel = parsedStatus.level;
       }
     }
 
@@ -354,10 +500,12 @@ function loadData() {
 function saveData() {
   localStorage.setItem("ac_game_review_queue", JSON.stringify(reviewQueue));
   localStorage.setItem("ac_game_history", JSON.stringify(gameHistory));
+  localStorage.setItem("ac_game_level_history", JSON.stringify(levelHistory)); // ★追加
   localStorage.setItem("ac_game_stats", JSON.stringify(subjectStats));
   localStorage.setItem("ac_game_memory", JSON.stringify(subjectMemory));
   localStorage.setItem("ac_game_mission", JSON.stringify(missionState));
   localStorage.setItem("ac_game_mission_days", JSON.stringify(missionCompletionDays));
+  localStorage.setItem("ac_game_player_status", JSON.stringify({ exp: playerExp, level: playerLevel }));
   updateReviewButtonState();
 }
 
@@ -388,16 +536,21 @@ function clearData() {
 function executeClearData() {
   localStorage.removeItem("ac_game_review_queue");
   localStorage.removeItem("ac_game_history");
+  localStorage.removeItem("ac_game_level_history");
   localStorage.removeItem("ac_game_stats");
   localStorage.removeItem("ac_game_memory");
   localStorage.removeItem("ac_game_mission");
   localStorage.removeItem("ac_game_mission_days");
+  localStorage.removeItem("ac_game_player_status");
   reviewQueue = [];
   gameHistory = [];
+  levelHistory = {};
   subjectStats = {};
   subjectMemory = {};
   missionState = { date: null, type: null, target: 0, progress: 0, done: false, description: "" };
   missionCompletionDays = [];
+  playerExp = 0;
+  playerLevel = 1;
   updateReviewButtonState();
 
   // 画面を閉じずに、その場でグラフとランキングを更新（クリア）する
@@ -445,6 +598,57 @@ function getGradesForExam(exam) {
   return availableGrades.length ? availableGrades : [];
 }
 
+function getWorldLevelsForSelection(exam, grade) {
+  const levels = new Set();
+  allAccounts.forEach((item) => {
+    if (exam && item.exam !== exam) return;
+    if (grade && item.grade !== grade) return;
+    if (typeof item.level === "number" && Number.isFinite(item.level)) {
+      levels.add(item.level);
+    }
+  });
+  const arr = Array.from(levels).filter((v) => v > 0).sort((a, b) => a - b);
+  if (arr.length === 0) return [1];
+  return arr;
+}
+
+function buildLevelButtonsForSelection(exam, grade) {
+  if (!levelButtonsContainer) return;
+  const levels = getWorldLevelsForSelection(exam, grade);
+  levelButtonsContainer.innerHTML = "";
+  currentLevelButtons = [];
+
+  const prevLevel = currentLevel;
+  let nextLevel = prevLevel && levels.includes(prevLevel) ? prevLevel : levels[0];
+
+  levels.forEach((lvl) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "level-button";
+    btn.dataset.level = String(lvl);
+    btn.textContent = String(lvl);
+    btn.addEventListener("click", () => {
+      currentLevel = lvl;
+      gamePhase = "training";
+      currentLevelButtons.forEach((b) => b.classList.remove("level-active"));
+      btn.classList.add("level-active");
+      updateRpgStartButtonState();
+      updateBossButtonState();
+      updateFeedback(`ワールド${lvl}を選択しました。スタートボタンを押して開始してください。`, "neutral");
+    });
+    levelButtonsContainer.appendChild(btn);
+    currentLevelButtons.push(btn);
+  });
+
+  currentLevel = nextLevel;
+  currentLevelButtons.forEach((btn) => {
+    if (Number(btn.dataset.level) === currentLevel) btn.classList.add("level-active");
+  });
+  updateRpgStartButtonState();
+  updateBossButtonState();
+  updateRpgLevelButtonStates();
+}
+
 function setupExams(exams) {
   if (!exams || exams.length === 0) return;
   availableExams = exams;
@@ -465,6 +669,7 @@ function setupExams(exams) {
   }
   const grades = getGradesForExam(examSelect ? examSelect.value : null);
   setupGrades(grades);
+  buildLevelButtonsForSelection(examSelect ? examSelect.value : null, gradeSelect ? gradeSelect.value : null);
   updateStatsButtonLabel();
 }
 
@@ -497,6 +702,7 @@ function setupGrades(grades) {
 
   buildReviewButtons(grades);
   updateReviewButtonState();
+  buildLevelButtonsForSelection(examSelect ? examSelect.value : null, gradeSelect ? gradeSelect.value : null);
 }
 
 function buildReviewButtons(grades) {
@@ -957,6 +1163,33 @@ function renderAchievements() {
 
   if (gameHistory.some(g => g.accuracy >= 90)) items.push("ハイスコア(90%+)");
 
+  // ボス撃破称号
+  const bossWins = new Set();
+  Object.entries(levelHistory || {}).forEach(([key, entry]) => {
+    if (entry && entry.bossCleared) {
+      const parts = key.split("|");
+      const lvl = Number(parts[2]);
+      if (Number.isFinite(lvl)) bossWins.add(lvl);
+    }
+  });
+  if (bossWins.size > 0) {
+    items.push(`ワールド${Array.from(bossWins).sort((a, b) => a - b).join(", ")} ボス撃破！`);
+  }
+
+  // RPGレベルのクリア状況（1〜9）
+  const currentExam = examSelect ? examSelect.value : null;
+  if (currentExam && currentGrade) {
+    const cleared = [];
+    for (let lvl = 1; lvl <= 9; lvl++) {
+      if (isLevelCleared(currentExam, currentGrade, lvl)) {
+        cleared.push(lvl);
+      }
+    }
+    if (cleared.length > 0) {
+      items.push(`${currentExam} ${currentGrade} ワールド${cleared.join(", ")} クリア`);
+    }
+  }
+
   achievementListEl.innerHTML = "";
   if (items.length === 0) {
     const li = document.createElement("li");
@@ -1026,6 +1259,63 @@ function setStartButtonsDisabled(disabled) {
   startButtons.forEach((button) => {
     button.disabled = disabled;
   });
+}
+
+function updateRpgStartButtonState() {
+  if (!rpgStartButton) return;
+  const ready = currentMode === "rpg" && accountsLoaded && currentLevel !== null;
+  rpgStartButton.disabled = !ready;
+}
+
+function updateBossButtonState() {
+  if (!bossButton) return;
+  const currentExam = examSelect ? examSelect.value : null;
+  const currentGrade = gradeSelect ? gradeSelect.value : null;
+  const enabledMode = currentMode === "rpg";
+  const canCheck = enabledMode && currentExam && currentGrade && currentLevel !== null;
+  const bossUnlocked = canCheck ? isLevelCleared(currentExam, currentGrade, currentLevel) : false;
+
+  bossButton.hidden = !enabledMode;
+  bossButton.disabled = !bossUnlocked;
+  bossButton.classList.toggle("locked", !bossUnlocked);
+  const labelCore = currentLevel ? `ボス戦 (W${currentLevel})` : "ボス戦";
+  bossButton.textContent = bossUnlocked ? labelCore : "ボス戦";
+}
+
+function updateLevelButtonStates() {
+  if (!rpgLevelSelect) return;
+  const currentExam = examSelect ? examSelect.value : null;
+  const currentGrade = gradeSelect ? gradeSelect.value : null;
+  const maxClearedLevel = getMaxClearedLevel(currentExam, currentGrade);
+  const buttons = rpgLevelSelect.querySelectorAll(".level-button");
+
+  buttons.forEach((btn) => {
+    const level = Number(btn.dataset.level);
+    if (!btn.dataset.label) {
+      btn.dataset.label = btn.textContent.trim();
+    }
+    const baseLabel = btn.dataset.label || btn.textContent.trim();
+    let label = baseLabel;
+
+    const cleared = currentExam && currentGrade && Number.isFinite(level) && isLevelCleared(currentExam, currentGrade, level);
+    btn.classList.toggle("level-button-cleared", !!cleared);
+
+    const prevBossCleared = Number.isFinite(level) && level >= 2
+      ? isBossCleared(currentExam, currentGrade, level - 1)
+      : true;
+    const locked = Number.isFinite(level) && level >= 2 && (!prevBossCleared);
+    btn.disabled = !!locked;
+    btn.classList.toggle("level-locked", !!locked);
+
+    if (btn.textContent !== label) {
+      btn.textContent = label;
+    }
+  });
+  updateBossButtonState();
+}
+
+function updateRpgLevelButtonStates() {
+  updateLevelButtonStates();
 }
 
 function stopTimer() {
@@ -1102,7 +1392,7 @@ function resetGameState() {
   cardEl.classList.remove("pop-in");
   setYomiText(null);
 
-  questionCountEl.textContent = "0";
+  if (questionCountEl) questionCountEl.textContent = "0";
   correctCountEl.textContent = "0";
   if (questionTargetEl) questionTargetEl.textContent = "0";
 
@@ -1133,6 +1423,57 @@ function shuffle(array) {
     [clone[i], clone[j]] = [clone[j], clone[i]];
   }
   return clone;
+}
+
+/**
+ * RPGモード用の問題セット作成関数
+ * 指定されたレベルから10問を作成し、足りない場合は下位レベルから補充する
+ * @param {Array} allAccounts - 全問題の配列
+ * @param {string} exam - 試験名
+ * @param {string} grade - 級
+ * @param {number} targetLevel - 選択されたレベル
+ * @returns {Array} 最大10問の問題配列（シャッフル済み）
+ */
+function buildRPGQuestionPool(allAccounts, exam, grade, targetLevel) {
+  const TARGET_COUNT = 10;
+  const result = [];
+  const usedNames = new Set(); // 重複防止用
+
+  // 指定されたレベルの問題を取得してシャッフル
+  let currentLevelQuestions = allAccounts.filter(
+    (item) => item.exam === exam && item.grade === grade && item.level === targetLevel
+  );
+  currentLevelQuestions = shuffle(currentLevelQuestions);
+
+  // まず指定レベルの問題を追加
+  for (const q of currentLevelQuestions) {
+    if (result.length >= TARGET_COUNT) break;
+    if (!usedNames.has(q.name)) {
+      result.push(q);
+      usedNames.add(q.name);
+    }
+  }
+
+  // 10問に満たない場合、下位レベル全体からシャッフルして補充
+  if (result.length < TARGET_COUNT) {
+    let lowerLevelQuestions = allAccounts.filter(
+      (item) => item.exam === exam && item.grade === grade && typeof item.level === "number" && item.level < targetLevel
+    );
+    lowerLevelQuestions = shuffle(lowerLevelQuestions);
+
+    for (const q of lowerLevelQuestions) {
+      if (result.length >= TARGET_COUNT) break;
+      if (!usedNames.has(q.name)) {
+        result.push(q);
+        usedNames.add(q.name);
+      }
+    }
+  }
+
+  // 注: レベル1まで見ても10問に満たない場合は、その時点で揃っている問題数だけ返す
+  // エラーにはせず、startGame側で件数チェックを行う
+
+  return result;
 }
 
 function weightedSample(pool, count, grade, exam) {
@@ -1222,7 +1563,7 @@ function evaluateAnswer(selectedType, zone = null) {
   if (!currentAccount || locked) return;
   locked = true;
   totalCount += 1;
-  questionCountEl.textContent = String(totalCount);
+  if (questionCountEl) questionCountEl.textContent = String(Math.max(0, questionGoal - totalCount));
 
   const isCorrect = selectedType === currentAccount.type;
 
@@ -1236,10 +1577,21 @@ function evaluateAnswer(selectedType, zone = null) {
     updateFeedback(`❌ ざんねん… ${currentAccount.name} は「${TYPE_LABELS[currentAccount.type]}」です。`, "wrong");
   }
 
+  // ボス戦は1問でもミスで終了
+  if (gamePhase === "boss" && !isCorrect) {
+    handleBossFailure([...queue], currentAccount);
+    return;
+  }
+
   answersLog.push({
     timestamp: new Date().toISOString(),
     grade: activeGrade,
     exam: activeExam,
+    mode: isReviewMode ? "review" : (currentMode || "all"),
+    sessionLevel: (isReviewMode ? null : (currentMode === "rpg" ? (currentLevel ?? null) : null)),
+    accountLevel: currentAccount && typeof currentAccount.level !== "undefined"
+      ? currentAccount.level
+      : null,
     questionNumber: totalCount,
     account: currentAccount.name,
     correctType: currentAccount.type,
@@ -1282,6 +1634,11 @@ function evaluateAnswer(selectedType, zone = null) {
 
   if (zone) zone.classList.add(isCorrect ? "correct" : "wrong");
 
+  if (gamePhase === "boss" && !isCorrect) {
+    handleBossFailure([...queue], currentAccount);
+    return;
+  }
+
   setTimeout(() => {
     if (zone) {
       zone.classList.remove("correct", "wrong");
@@ -1296,7 +1653,7 @@ evaluateAnswer = function (selectedType, zone = null) {
   if (!currentAccount || locked) return;
   locked = true;
   totalCount += 1;
-  questionCountEl.textContent = String(totalCount);
+  if (questionCountEl) questionCountEl.textContent = String(Math.max(0, questionGoal - totalCount));
 
   const isCorrect = selectedType === currentAccount.type;
   let feedbackText = "";
@@ -1325,6 +1682,11 @@ evaluateAnswer = function (selectedType, zone = null) {
     timestamp: new Date().toISOString(),
     grade: activeGrade,
     exam: activeExam,
+    mode: isReviewMode ? "review" : (currentMode || "all"),
+    sessionLevel: (isReviewMode ? null : (currentMode === "rpg" ? (currentLevel ?? null) : null)),
+    accountLevel: currentAccount && typeof currentAccount.level !== "undefined"
+      ? currentAccount.level
+      : null,
     questionNumber: totalCount,
     account: currentAccount.name,
     correctType: currentAccount.type,
@@ -1361,6 +1723,12 @@ evaluateAnswer = function (selectedType, zone = null) {
   saveData();
 
   if (zone) zone.classList.add(isCorrect ? "correct" : "wrong");
+
+  // ボス戦は1問でもミスで終了
+  if (gamePhase === "boss" && !isCorrect) {
+    handleBossFailure([...queue]);
+    return;
+  }
 
   setTimeout(() => {
     if (zone) {
@@ -1405,11 +1773,13 @@ function startGame(selectedGrade, questionCount, isReview = false) {
 
   let pool = [];
   isReviewMode = isReview;
+  const requestedCount = Number.isFinite(Number(questionCount)) ? Number(questionCount) : 10;
   const selectedExam = examSelect ? examSelect.value : null;
   const targetGrade = isReviewMode
     ? (selectedGrade || (gradeSelect ? gradeSelect.value : null))
     : selectedGrade;
   activeExam = selectedExam;
+  gamePhase = currentMode === "rpg" ? "training" : "idle";
 
   if (isReviewMode) {
     // 復習モード: reviewQueueにある科目のみ
@@ -1427,18 +1797,48 @@ function startGame(selectedGrade, questionCount, isReview = false) {
       return;
     }
     questionCount = pool.length; // 全て出題
+  } else if (currentMode === "rpg") {
+    // RPGモード: 専用の問題セット作成ロジック
+    if (currentLevel === null) {
+      updateFeedback("ワールドを選択してください。", "wrong");
+      return;
+    }
+
+    // RPGモードは常に10問
+    questionCount = 10;
+
+    pool = buildRPGQuestionPool(allAccounts, selectedExam, selectedGrade, currentLevel);
+
+    if (pool.length === 0) {
+      updateFeedback(`レベル${currentLevel}の問題が見つかりません。`, "wrong");
+      return;
+    }
+
+    // 10問未満でも開始可能（下位レベルから補充した結果）
+    if (pool.length < 10) {
+      updateFeedback(`ワールド${currentLevel}から${pool.length}問を出題します（下位レベルを含む）。`, "info");
+    }
   } else {
-    // 通常モード
+    // 通常モード（全復習モードなど）
     pool = allAccounts.filter((item) => item.grade === selectedGrade && (!selectedExam || item.exam === selectedExam));
-    if (pool.length < questionCount) {
+
+    if (pool.length < requestedCount) {
       updateFeedback(`${selectedExam || ""} ${selectedGrade} の問題が足りません（${pool.length} 件）。`, "wrong");
       return;
     }
   }
 
   answersLog = [];
-  questionGoal = questionCount;
-  queue = isReviewMode ? shuffle(pool).slice(0, questionGoal) : weightedSample(pool, questionGoal, targetGrade, selectedExam);
+
+  // RPGモードの場合、poolは既にbuildRPGQuestionPool()でシャッフル済み
+  if (currentMode === "rpg") {
+    queue = pool; // 既にシャッフル済みなのでそのまま使う
+  } else if (isReviewMode) {
+    queue = shuffle(pool).slice(0, questionCount);
+  } else {
+    queue = weightedSample(pool, requestedCount, targetGrade, selectedExam);
+  }
+  questionGoal = queue.length;
   totalCount = 0;
   correctCount = 0;
   locked = false;
@@ -1446,7 +1846,7 @@ function startGame(selectedGrade, questionCount, isReview = false) {
   activeGrade = targetGrade || selectedGrade;
   currentStreak = 0;
 
-  questionCountEl.textContent = "0";
+  if (questionCountEl) questionCountEl.textContent = String(Math.max(0, questionGoal));
   correctCountEl.textContent = "0";
   if (questionTargetEl) questionTargetEl.textContent = String(questionGoal);
 
@@ -1463,14 +1863,436 @@ function startGame(selectedGrade, questionCount, isReview = false) {
   setBoardEnabled(false); // カウントダウン中は操作不可
   if (exportButton) exportButton.disabled = true;
   hideResultSummary();
+  updateBossIndicator(null, false);
 
   // カウントダウン開始
   startCountdown(() => {
-    const modeLabel = isReviewMode ? "復習モード" : `${selectedGrade} チャレンジ`;
+    const modeLabel = isReviewMode
+      ? "復習モード"
+      : `${selectedGrade} チャレンジ`;
     updateFeedback(`🏁 ${modeLabel}！スタート！`, "info");
+    setBoardEnabled(true);
+    updateBossIndicator(currentLevel, gamePhase === "boss");
+    if (statusBarEl && typeof statusBarEl.scrollIntoView === "function") {
+      statusBarEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    startTimer();
+    nextAccount();
+  });
+}
+
+function startBossBattle() {
+  if (!bossButton) return;
+  if (currentMode !== "rpg") {
+    updateFeedback("RPGモードに切り替えてください。", "wrong");
+    return;
+  }
+  setStartButtonsDisabled(true);
+  if (rpgStartButton) rpgStartButton.disabled = true;
+  if (currentLevel === null) {
+    updateFeedback("ワールドを選択してください。", "wrong");
+    return;
+  }
+
+  const selectedExam = examSelect ? examSelect.value : null;
+  const selectedGrade = gradeSelect ? gradeSelect.value : null;
+  if (!selectedGrade || !accountsLoaded) {
+    updateFeedback("級を選択してください。", "wrong");
+    return;
+  }
+
+  if (!isLevelCleared(selectedExam, selectedGrade, currentLevel)) {
+    updateFeedback("このレベルはまだボス戦を解放していません。", "wrong");
+    return;
+  }
+
+  const pool = shuffle(allAccounts.filter(
+    (item) => item.exam === selectedExam && item.grade === selectedGrade && item.level === currentLevel
+  ));
+  if (pool.length === 0) {
+    updateFeedback(`ワールド${currentLevel}のボス戦データが見つかりません。`, "wrong");
+    return;
+  }
+
+  const bossQueue = pool; // そのレベルの全問をシャッフルして出題
+
+  startBossFromQueue(bossQueue, selectedGrade, selectedExam);
+}
+
+function startBossFromQueue(bossQueue, selectedGrade, selectedExam) {
+  if (!bossQueue || bossQueue.length === 0) {
+    updateFeedback("ボス戦の問題がありません。", "wrong");
+    return;
+  }
+  bossRemainingQueue = [];
+  isReviewMode = false;
+  answersLog = [];
+  queue = bossQueue;
+  questionGoal = queue.length;
+  totalCount = 0;
+  correctCount = 0;
+  locked = false;
+  currentAccount = null;
+  activeGrade = selectedGrade;
+  activeExam = selectedExam;
+  currentStreak = 0;
+  gamePhase = "boss";
+
+  if (questionCountEl) questionCountEl.textContent = String(Math.max(0, questionGoal));
+  correctCountEl.textContent = "0";
+  if (questionTargetEl) questionTargetEl.textContent = String(questionGoal);
+
+  historyListEl.innerHTML = "";
+  setCardText("---");
+  setYomiText(null);
+  cardEl.classList.remove("pop-in");
+
+  updateFeedback(`ワールド${currentLevel}のボス戦を開始します。全問正解でクリア！`, "info");
+  setBoardEnabled(false);
+  setStartButtonsDisabled(true);
+  if (rpgStartButton) rpgStartButton.disabled = true;
+  if (bossButton) bossButton.disabled = true;
+  if (exportButton) exportButton.disabled = true;
+  hideResultSummary();
+  updateBossIndicator(currentLevel, true);
+
+  startCountdown(() => {
+    updateFeedback(`🏁 ワールド${currentLevel} ボス戦スタート！`, "info");
     setBoardEnabled(true);
     startTimer();
     nextAccount();
+  });
+}
+
+function handleBossFailure(remainingQueue, wrongAccount = null) {
+  stopTimer();
+  setBoardEnabled(false);
+  clearDropZoneStates();
+  locked = true;
+  const pending = [];
+  const wrong = wrongAccount || currentAccount;
+  if (wrong) pending.push(wrong);
+  if (Array.isArray(remainingQueue)) pending.push(...remainingQueue);
+  queue = [];
+  bossRemainingQueue = pending;
+  questionGoal = bossRemainingQueue.length;
+  if (questionCountEl) questionCountEl.textContent = String(Math.max(0, questionGoal));
+  correctCountEl.textContent = "0";
+  if (questionTargetEl) questionTargetEl.textContent = String(questionGoal);
+  answersLog = [];
+  historyListEl.innerHTML = "";
+  updateFeedback("ボスに倒されました。作戦を立て直そう。", "wrong");
+  updateBossIndicator(currentLevel, true);
+  setStartButtonsDisabled(true);
+  if (rpgStartButton) rpgStartButton.disabled = true;
+  if (bossButton) bossButton.disabled = true;
+  showBossFailOverlay(bossRemainingQueue.length > 0);
+}
+
+// --- レベル進捗集計＆クリア判定 ---
+
+function getLevelKey(exam, grade, level) {
+  if (level == null) return null;
+  const ex = exam || "日商";
+  const gr = grade || "";
+  return `${ex}|${gr}|${level}`;
+}
+
+/**
+ * 1セッションぶんの結果から levelHistory を更新する
+ * record: gameHistory に積んでいる1件と同じ形を想定
+ */
+function updateLevelHistoryForSession(record) {
+  if (!record) return;
+  if (record.mode !== "rpg") return;
+  if (record.level == null) return;
+
+  const key = getLevelKey(record.exam, record.grade, record.level);
+  if (!key) return;
+
+  const questionCount = record.questionCount || 0;
+  const accuracyPercent = record.accuracy || 0; // 0〜100
+  const accuracyRatio = questionCount > 0 ? (accuracyPercent / 100) : 0;
+  const correctCount = Math.round(questionCount * accuracyRatio);
+
+  const existing = levelHistory[key] || {
+    sessions: 0,
+    totalQuestions: 0,
+    totalCorrect: 0,
+    bestAccuracy: 0,
+    maxQuestionCount: 0,
+    lastPlayedAt: null,
+    cleared: false
+  };
+
+  const updated = { ...existing };
+  updated.sessions += 1;
+  updated.totalQuestions += questionCount;
+  updated.totalCorrect += correctCount;
+  updated.bestAccuracy = Math.max(existing.bestAccuracy || 0, accuracyPercent);
+  updated.maxQuestionCount = Math.max(existing.maxQuestionCount || 0, questionCount);
+  updated.lastPlayedAt = record.timestamp || Date.now();
+  if (record.phase === "boss" && record.bossResult === "clear") {
+    updated.bossCleared = true;
+  }
+
+  // --- クリア判定（config のデフォルト値を使用） ---
+  const bossCfgBase = (GAME_CFG && GAME_CFG.bossUnlock && GAME_CFG.bossUnlock.default) || {};
+  const minQuestions = bossCfgBase.minQuestionsPerSession ?? 10;
+  const minSessions = bossCfgBase.minSessions ?? 2;
+  const minBestAccuracy = (bossCfgBase.minBestAccuracy ?? 0.8) * 100; // 0.8 → 80%
+
+  const enoughSessions = updated.sessions >= minSessions;
+  const enoughQuestions = updated.maxQuestionCount >= minQuestions;
+  const enoughAccuracy = updated.bestAccuracy >= minBestAccuracy;
+
+  updated.cleared = !!(enoughSessions && enoughQuestions && enoughAccuracy);
+
+  levelHistory[key] = updated;
+}
+
+/**
+ * レベルがクリア済みかどうかを返す
+ */
+function isLevelCleared(exam, grade, level) {
+  const key = getLevelKey(exam, grade, level);
+  if (!key) return false;
+  const entry = levelHistory[key];
+  return !!(entry && entry.cleared);
+}
+
+function getMaxClearedLevel(exam, grade) {
+  let max = 0;
+  for (let lvl = 1; lvl <= 9; lvl++) {
+    if (isLevelCleared(exam, grade, lvl)) {
+      max = lvl;
+    }
+  }
+  return max;
+}
+
+function isBossCleared(exam, grade, level) {
+  const key = getLevelKey(exam, grade, level);
+  if (!key) return false;
+  const entry = levelHistory[key];
+  return !!(entry && entry.bossCleared);
+}
+
+function updateBossIndicator(level, isBossPhase) {
+  if (!bossIndicatorEl) return;
+  if (isBossPhase && level != null) {
+    bossIndicatorEl.hidden = false;
+    bossIndicatorEl.textContent = `👑 ボス戦: ワールド${level}`;
+  } else {
+    bossIndicatorEl.hidden = true;
+    bossIndicatorEl.textContent = "👑 ボス戦";
+  }
+}
+
+function getExpConfig() {
+  return (GAME_CFG && GAME_CFG.exp) || {};
+}
+
+function getRecommendedPlayerLevelForWorld(exam, grade, worldLevel) {
+  const expCfg = getExpConfig();
+  const worldCfg = expCfg.worldRecommendedLevel || {};
+  const byWorldKey = worldCfg.byWorldKey || {};
+  const defaultByLevel = worldCfg.defaultByLevel || {};
+
+  if (!worldLevel) return null;
+
+  const ex = exam || "日商";
+  const gr = grade || "";
+  const key = ex + "|" + gr + "|" + String(worldLevel);
+
+  if (Object.prototype.hasOwnProperty.call(byWorldKey, key)) {
+    return byWorldKey[key];
+  }
+
+  const keyLevel = String(worldLevel);
+  if (Object.prototype.hasOwnProperty.call(defaultByLevel, keyLevel)) {
+    return defaultByLevel[keyLevel];
+  }
+
+  return null;
+}
+
+function getExpMultiplierFromPlayerLevel(exam, grade, worldLevel) {
+  const expCfg = getExpConfig();
+  const decayCfg = expCfg.worldExpDecay || {};
+  if (decayCfg.enabled === false) return 1.0;
+
+  const recommended = getRecommendedPlayerLevelForWorld(exam, grade, worldLevel);
+  if (recommended == null) return 1.0;
+
+  const gap = playerLevel - recommended;
+  if (gap <= 0) {
+    return decayCfg.multiplierWhenGapLE0 ?? 1.0;
+  } else if (gap === 1) {
+    return decayCfg.multiplierWhenGapEQ1 ?? 0.5;
+  } else {
+    return decayCfg.multiplierWhenGapGE2 ?? 0.1;
+  }
+}
+
+function calculateSessionExp(record, correctCount, questionGoal) {
+  const expCfg = getExpConfig();
+  const baseExp = expCfg.baseExpPerCorrect ?? 10;
+  const useLevelBonus = expCfg.useLevelBonus ?? true;
+  const levelBonusFactor = expCfg.levelBonusFactor ?? 0.05;
+  const wrongPenaltyEnabled = expCfg.wrongPenaltyEnabled ?? false;
+  const wrongPenaltyPerQuestion = expCfg.wrongPenaltyPerQuestion ?? 5;
+
+  const level = record.level != null ? record.level : 0;
+  const worldLevel = record.level != null ? record.level : null;
+  const isBoss = record.phase === "boss";
+  const isBossClear = record.bossResult === "clear";
+
+  let perCorrect = baseExp;
+  if (useLevelBonus && level > 0) {
+    perCorrect = perCorrect * (1 + levelBonusFactor * level);
+  }
+
+  let exp = Math.round(correctCount * perCorrect);
+
+  if (wrongPenaltyEnabled && questionGoal > correctCount) {
+    const wrongCount = questionGoal - correctCount;
+    exp -= wrongCount * wrongPenaltyPerQuestion;
+  }
+
+  if (isBoss && isBossClear) {
+    exp = Math.round(exp * 1.5);
+  }
+
+  const multiplier = getExpMultiplierFromPlayerLevel(record.exam, record.grade, worldLevel);
+  exp = Math.round(exp * multiplier);
+
+  if (exp < 0) exp = 0;
+  return exp;
+}
+
+function recalcPlayerLevelFromExp() {
+  const expCfg = getExpConfig();
+  const baseRequired = expCfg.levelUp?.baseRequiredExp ?? 100;
+  const growthRate = expCfg.levelUp?.growthRate ?? 1.2;
+
+  let level = 1;
+  let threshold = baseRequired;
+  let remainingExp = playerExp;
+
+  while (remainingExp >= threshold) {
+    level += 1;
+    remainingExp -= threshold;
+    threshold = Math.round(threshold * growthRate);
+  }
+
+  playerLevel = level;
+}
+
+function updatePlayerStatusView() {
+  if (!playerStatusEl) return;
+  if (currentMode !== "rpg") {
+    playerStatusEl.textContent = "";
+    playerStatusEl.style.visibility = "hidden";
+    return;
+  }
+  playerStatusEl.style.visibility = "visible";
+  const expCfg = getExpConfig();
+  const baseRequired = expCfg.levelUp?.baseRequiredExp ?? 100;
+  const growthRate = expCfg.levelUp?.growthRate ?? 1.2;
+
+  let level = 1;
+  let threshold = baseRequired;
+  let remaining = playerExp;
+
+  while (remaining >= threshold) {
+    remaining -= threshold;
+    level += 1;
+    threshold = Math.round(threshold * growthRate);
+  }
+
+  const expToNext = Math.max(0, threshold - remaining);
+  playerStatusEl.textContent = `プレイヤーLv.${playerLevel}（次のレベルまで ${expToNext} EXP）`;
+}
+
+function showLevelUpEffect(newLevel) {
+  const toast = document.createElement("div");
+  toast.className = "levelup-toast";
+  const chip = document.createElement("div");
+  chip.className = "levelup-chip";
+  chip.textContent = `LEVEL UP! Lv.${newLevel}`;
+  toast.appendChild(chip);
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.remove();
+  }, 2100);
+}
+
+function ensureBossFailOverlay() {
+  if (bossFailOverlay) return bossFailOverlay;
+  const overlay = document.createElement("div");
+  overlay.className = "result-overlay boss-fail-overlay";
+  overlay.hidden = true;
+  const card = document.createElement("div");
+  card.className = "result-card";
+  const title = document.createElement("h2");
+  title.textContent = "👑 ボス戦 失敗";
+  const msg = document.createElement("p");
+  msg.id = "boss-fail-message";
+  msg.textContent = "ボスに倒されました...";
+  const actions = document.createElement("div");
+  actions.className = "result-actions";
+
+  const resumeBtn = document.createElement("button");
+  resumeBtn.type = "button";
+  resumeBtn.className = "primary-button push-btn";
+  resumeBtn.id = "boss-resume-btn";
+  resumeBtn.textContent = "残りから再挑戦";
+
+  const restartBtn = document.createElement("button");
+  restartBtn.type = "button";
+  restartBtn.className = "ghost-button";
+  restartBtn.id = "boss-restart-btn";
+  restartBtn.textContent = "最初から再挑戦";
+
+  const giveupBtn = document.createElement("button");
+  giveupBtn.type = "button";
+  giveupBtn.className = "ghost-button danger-text";
+  giveupBtn.id = "boss-giveup-btn";
+  giveupBtn.textContent = "あきらめる";
+
+  actions.append(resumeBtn, restartBtn, giveupBtn);
+  card.append(title, msg, actions);
+  overlay.append(card);
+  document.body.appendChild(overlay);
+  bossFailOverlay = {
+    overlay,
+    resumeBtn,
+    restartBtn,
+    giveupBtn,
+    msg
+  };
+  return bossFailOverlay;
+}
+
+function hideBossFailOverlay() {
+  const ref = ensureBossFailOverlay();
+  ref.overlay.classList.remove("visible");
+  setTimeout(() => { ref.overlay.hidden = true; }, 200);
+}
+
+function showBossFailOverlay(canResume) {
+  const ref = ensureBossFailOverlay();
+  ref.resumeBtn.disabled = !canResume;
+  ref.resumeBtn.classList.toggle("disabled", !canResume);
+  ref.overlay.hidden = false;
+  setTimeout(() => ref.overlay.classList.add("visible"), 10);
+}
+
+function clearDropZoneStates() {
+  dropZones.forEach((zone) => {
+    zone.classList.remove("correct", "wrong");
+    zone.blur();
   });
 }
 
@@ -1486,6 +2308,10 @@ async function logSessionToFirestore(durationMs) {
 
   const playerId = getOrCreatePlayerId();
   const exam = lastFinishedExam || activeExam || null;
+  const baseMode = isReviewMode ? "review" : (currentMode || "all");
+  const currentPhase = gamePhase;
+  const bossResult = currentPhase === "boss" ? (accuracy === 1 ? "clear" : "fail") : undefined;
+  const latestRecord = lastSessionRecord || (gameHistory.length ? gameHistory[gameHistory.length - 1] : null);
   const summary = {
     appId: "accounts_quiz",
     grade: lastFinishedGrade || activeGrade || null,
@@ -1496,8 +2322,22 @@ async function logSessionToFirestore(durationMs) {
     skipCount,
     accuracy,
     playerId,
-    mode: isReviewMode ? "review" : "normal",
+    mode: baseMode,
   };
+
+  if (baseMode === "rpg") {
+    summary.level = currentLevel ?? null;
+    summary.phase = currentPhase;
+    if (currentPhase === "boss") {
+      summary.bossResult = bossResult;
+    }
+  }
+
+  if (latestRecord && latestRecord.mode === "rpg") {
+    summary.sessionExp = latestRecord.sessionExp ?? null;
+    summary.totalExpAfter = latestRecord.totalExpAfter ?? null;
+    summary.playerLevelAfter = latestRecord.playerLevelAfter ?? null;
+  }
 
   if (typeof durationMs === "number") {
     summary.durationMs = durationMs;
@@ -1535,26 +2375,81 @@ function finishGame() {
   lastFinishedQuestionGoal = questionGoal;
   activeGrade = null;
   activeExam = null;
-  showResultSummary(finishedGrade, durationMs);
-  updateMissionProgressGame(avgSeconds);
+  const finishedPhase = gamePhase;
+  const isBossPhase = finishedPhase === "boss";
+  const accuracy = questionGoal > 0 ? Math.round((correctCount / questionGoal) * 100) : 0;
+  const isBossClear = isBossPhase && correctCount === questionGoal;
+  const prevPlayerLevel = playerLevel;
 
   // ゲーム結果保存 (復習モードは履歴に残さない、あるいは区別する？今回は通常のみ履歴に残す)
   if (!isReviewMode) {
-    const accuracy = questionGoal > 0 ? Math.round((correctCount / questionGoal) * 100) : 0;
-    gameHistory.push({
+    const baseMode = currentMode || "all";
+
+    const record = {
       timestamp: Date.now(),
       exam: finishedExam,
       grade: finishedGrade,
       accuracy: accuracy,
       time: durationMs,
-      questionCount: questionGoal
-    });
+      questionCount: questionGoal,
+      mode: baseMode,
+      phase: finishedPhase
+    };
+
+    if (baseMode === "rpg") {
+      record.level = currentLevel ?? null;
+      if (isBossPhase) {
+        record.bossResult = isBossClear ? "clear" : "fail";
+      }
+    }
+
+    if (baseMode === "rpg") {
+      const sessionExp = calculateSessionExp(record, correctCount, questionGoal);
+      playerExp += sessionExp;
+      if (playerExp < 0) playerExp = 0;
+      recalcPlayerLevelFromExp();
+      record.sessionExp = sessionExp;
+      record.totalExpAfter = playerExp;
+      record.playerLevelAfter = playerLevel;
+    }
+
+    gameHistory.push(record);
+    lastSessionRecord = record;
+
+    // RPGモード時はレベル進捗も更新
+    if (record.mode === "rpg" && record.level != null) {
+      updateLevelHistoryForSession(record);
+      if (isBossPhase && isBossClear) {
+        const key = getLevelKey(record.exam, record.grade, record.level);
+        if (key) {
+          const existing = levelHistory[key] || {};
+          levelHistory[key] = { ...existing, bossCleared: true };
+        }
+      }
+      updateRpgLevelButtonStates();
+      updateBossButtonState();
+    }
+
     saveData();
   } else {
     // 復習モード終了時もデータ保存（reviewQueueの更新のため）
     saveData();
   }
+  updatePlayerStatusView();
   logSessionToFirestore(durationMs);
+  if (isBossPhase) {
+    updateFeedback(isBossClear ? "👑 ボスを撃破しました！" : "ボス戦失敗。もう一度挑戦できます。", isBossClear ? "correct" : "wrong");
+  }
+  updateBossIndicator(null, false);
+  gamePhase = "idle";
+  setStartButtonsDisabled(!accountsLoaded);
+  updateRpgStartButtonState();
+  updateBossButtonState();
+  if (!isReviewMode && currentMode === "rpg" && playerLevel > prevPlayerLevel) {
+    showLevelUpEffect(playerLevel);
+  }
+  showResultSummary(finishedGrade, durationMs);
+  updateMissionProgressGame(avgSeconds);
 }
 
 function showResultSummary(gradeLabel, durationMs) {
@@ -1611,6 +2506,16 @@ showResultSummary = function (gradeLabel, durationMs) {
 
   if (resultScoreEl) {
     resultScoreEl.textContent = `正答率 ${accuracy}% (${correctCount}/${questionGoal}問)`;
+  }
+
+  if (resultExpEl) {
+    if (lastSessionRecord && lastSessionRecord.mode === "rpg") {
+      const gained = lastSessionRecord.sessionExp ?? 0;
+      const total = lastSessionRecord.totalExpAfter ?? playerExp;
+      resultExpEl.textContent = `獲得EXP: +${gained}（累計 ${total}）`;
+    } else {
+      resultExpEl.textContent = "";
+    }
   }
 
   if (resultTimeEl) resultTimeEl.textContent = `タイム: ${formatDuration(durationMs)} `;
@@ -1717,6 +2622,7 @@ if (examSelect) {
 if (gradeSelect) {
   gradeSelect.addEventListener("change", () => {
     updateReviewButtonState();
+    buildLevelButtonsForSelection(examSelect ? examSelect.value : null, gradeSelect ? gradeSelect.value : null);
     if (statsOverlay && !statsOverlay.hidden) {
       renderChart();
       renderRanking();
@@ -1725,6 +2631,7 @@ if (gradeSelect) {
       updateMissionUI();
       renderMissionCalendar();
     }
+    updateRpgLevelButtonStates();
     setYomiText(currentAccount);
     updateStatsButtonLabel();
   });
@@ -1745,7 +2652,41 @@ if (questionFilterSelect) {
   });
 }
 
-if (localCsvButton && localCsvInput) {
+if (bossButton) {
+  bossButton.addEventListener("click", () => startBossBattle());
+}
+
+const bossFailRefs = ensureBossFailOverlay();
+if (bossFailRefs.resumeBtn) {
+  bossFailRefs.resumeBtn.addEventListener("click", () => {
+    hideBossFailOverlay();
+    if (bossRemainingQueue.length === 0) return;
+    const selectedGrade = activeGrade || (gradeSelect ? gradeSelect.value : null);
+    const selectedExam = activeExam || (examSelect ? examSelect.value : null);
+    startBossFromQueue(shuffle(bossRemainingQueue), selectedGrade, selectedExam);
+  });
+}
+if (bossFailRefs.restartBtn) {
+  bossFailRefs.restartBtn.addEventListener("click", () => {
+    hideBossFailOverlay();
+    bossRemainingQueue = [];
+    startBossBattle();
+  });
+}
+  if (bossFailRefs.giveupBtn) {
+    bossFailRefs.giveupBtn.addEventListener("click", () => {
+      hideBossFailOverlay();
+      resetGameState();
+      gamePhase = "idle";
+      updateBossIndicator(null, false);
+      setStartButtonsDisabled(!accountsLoaded);
+      updateRpgStartButtonState();
+      updateBossButtonState();
+      updatePlayerStatusView();
+    });
+  }
+
+  if (localCsvButton && localCsvInput) {
   localCsvButton.addEventListener("click", () => localCsvInput.click());
   localCsvInput.addEventListener("change", async (e) => {
     const file = e.target.files?.[0];
@@ -1810,6 +2751,8 @@ loadData(); // データ読み込み
 ensureDailyMission();
 renderMissionCalendar();
 updateStatsButtonLabel();
+updateRpgLevelButtonStates();
+updatePlayerStatusView();
 loadAccounts();
 
 if (calendarPrevEl) {

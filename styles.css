@@ -99,6 +99,248 @@ header h1 {
   color: #475569;
 }
 
+/* モード選択 */
+.mode-selection {
+  width: 100%;
+  text-align: center;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.mode-title {
+  font-size: 1rem;
+  color: #64748b;
+  margin: 0 0 0.5rem;
+}
+
+.mode-buttons {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.mode-btn {
+  flex: 1;
+  font-size: 0.9rem;
+  padding: 0.5rem;
+  background: #e2e8f0;
+  /* Default unselected */
+  box-shadow: 0 4px 0 #cbd5e1;
+  color: #64748b;
+}
+
+/* 全復習モード選択時: オレンジ/黄色系 (復習ボタンと同色) */
+#mode-all-button.selected {
+  background: #fcd34d;
+  /* Amber 300 */
+  box-shadow: 0 2px 0 #f59e0b;
+  color: #78350f;
+  transform: translateY(2px);
+}
+
+/* RPGモード選択時: 紫/オレンジ系 (より鮮やかに) */
+#mode-rpg-button.selected {
+  background: #d8b4fe;
+  /* Purple 300 */
+  box-shadow: 0 2px 0 #9333ea;
+  color: #581c87;
+  transform: translateY(2px);
+}
+
+/* レベル選択 */
+.level-select {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.2rem;
+  padding: 0.35rem 0.5rem;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 12px;
+  border: 2px dashed #e9d5ff;
+}
+
+.level-label {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #6b21a8;
+  white-space: nowrap;
+}
+
+.level-buttons {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  flex: 1;
+}
+
+.level-button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: #f3e8ff;
+  color: #7e22ce;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 0 #d8b4fe;
+  transition: all 0.1s;
+}
+
+.level-button:active {
+  transform: translateY(2px);
+  box-shadow: none;
+}
+
+.level-button.level-active {
+  background: #a855f7;
+  color: #fff;
+  box-shadow: 0 2px 0 #7e22ce;
+}
+
+.level-button.level-button-cleared {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  color: #7e22ce;
+  border: 2px solid #f59e0b;
+  box-shadow: 0 2px 0 #d97706;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.level-button.level-active.level-button-cleared {
+  background: linear-gradient(135deg, #fcd34d 0%, #f59e0b 100%);
+  color: #fff;
+  border-color: #d97706;
+  box-shadow: 0 2px 0 #b45309;
+}
+
+.level-button.level-locked {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.boss-button {
+  width: auto;
+  min-width: 90px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: #fde68a;
+  color: #92400e;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  box-shadow: 0 2px 0 #f59e0b;
+  transition: all 0.1s;
+  padding: 0.4rem 0.75rem;
+  white-space: nowrap;
+}
+
+.boss-button:active {
+  transform: translateY(2px);
+  box-shadow: none;
+}
+
+.boss-button.locked {
+  opacity: 0.35;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.boss-fail-overlay .result-card {
+  text-align: center;
+}
+
+.boss-fail-overlay .result-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.player-status {
+  font-size: 0.9rem;
+  margin-top: 0;
+  margin-bottom: 0;
+  color: #0f172a;
+  opacity: 0.85;
+  line-height: 1.2;
+}
+
+.result-exp {
+  font-weight: 700;
+  color: #0f766e;
+  margin: 0.25rem 0 0.35rem;
+}
+
+.levelup-toast {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2000;
+  animation: levelUpFade 2s ease forwards;
+}
+
+.levelup-toast .levelup-chip {
+  background: linear-gradient(135deg, #34d399, #10b981);
+  color: #fff;
+  padding: 1rem 1.75rem;
+  border-radius: 999px;
+  font-size: 1.25rem;
+  font-weight: 800;
+  box-shadow: 0 10px 30px rgba(16, 185, 129, 0.35);
+  transform: scale(0.6);
+  animation: levelUpPop 0.5s ease forwards;
+}
+
+@keyframes levelUpFade {
+  0% { opacity: 0; }
+  10% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes levelUpPop {
+  0% { transform: scale(0.6); }
+  50% { transform: scale(1.1); }
+  100% { transform: scale(1); }
+}
+
+.boss-indicator {
+  background: #fef9c3;
+  color: #92400e;
+  border-radius: 8px;
+  padding: 0.25rem 0.5rem;
+  font-weight: 800;
+}
+
+.rpg-start-wrapper {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.rpg-start-btn {
+  background: #a855f7;
+  box-shadow: 0 5px 0 #7e22ce;
+  color: #fff;
+  font-size: 1.2rem;
+  padding: 1rem 3rem;
+  min-width: 200px;
+}
+
 #question-filter {
   font-family: var(--font-game);
   font-weight: 700;
@@ -122,6 +364,37 @@ header h1 {
 .yomi-toggle input {
   width: 16px;
   height: 16px;
+}
+
+/* 問題数選択 */
+.question-count-select {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-weight: 800;
+  color: #64748b;
+}
+
+.question-count-select label {
+  font-size: 0.9rem;
+}
+
+/* スタートボタンラッパー */
+.start-button-wrapper {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.main-start-btn {
+  background: #fda4af;
+  box-shadow: 0 5px 0 #fb7185;
+  color: #881337;
+  font-size: 1.2rem;
+  padding: 1rem 3rem;
+  min-width: 200px;
 }
 
 .board {
