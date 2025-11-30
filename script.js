@@ -2494,6 +2494,7 @@ function finishGame() {
   } else {
     // 復習モード終了時もデータ保存（reviewQueueの更新のため）
     saveData();
+    lastSessionRecord = null; // 復習では直近レコードを持たせず、前回EXP表示を抑制
   }
   updatePlayerStatusView();
   logSessionToFirestore(durationMs);
@@ -2542,7 +2543,7 @@ function showResultSummary(gradeLabel, durationMs) {
     resultScoreEl.textContent = `正答率 ${accuracy}% (${correctCount}/${questionGoal}問)`;
   }
 
-  if (resultExpEl && lastSessionRecord && !isReviewMode) {
+  if (resultExpEl && lastSessionRecord && lastSessionRecord.mode === "rpg") {
     const gained = lastSessionRecord.sessionExp ?? 0;
     const total = lastSessionRecord.totalExpAfter ?? playerStatusMap[getPlayerKey(lastSessionRecord.exam, lastSessionRecord.grade)]?.exp ?? 0;
     resultExpEl.textContent = `獲得EXP: +${gained}（累計 ${total}）`;
@@ -2593,7 +2594,7 @@ showResultSummary = function (gradeLabel, durationMs) {
     resultScoreEl.textContent = `正答率 ${accuracy}% (${correctCount}/${questionGoal}問)`;
   }
 
-  if (resultExpEl && lastSessionRecord && !isReviewMode) {
+  if (resultExpEl && lastSessionRecord && lastSessionRecord.mode === "rpg") {
     const gained = lastSessionRecord.sessionExp ?? 0;
     const total = lastSessionRecord.totalExpAfter ?? playerStatusMap[getPlayerKey(lastSessionRecord.exam, lastSessionRecord.grade)]?.exp ?? 0;
     resultExpEl.textContent = `獲得EXP: +${gained}（累計 ${total}）`;
@@ -2604,7 +2605,7 @@ showResultSummary = function (gradeLabel, durationMs) {
   if (resultExpEl) {
     if (lastSessionRecord && lastSessionRecord.mode === "rpg") {
       const gained = lastSessionRecord.sessionExp ?? 0;
-      const total = lastSessionRecord.totalExpAfter ?? playerExp;
+      const total = lastSessionRecord.totalExpAfter ?? playerStatusMap[getPlayerKey(lastSessionRecord.exam, lastSessionRecord.grade)]?.exp ?? 0;
       resultExpEl.textContent = `獲得EXP: +${gained}（累計 ${total}）`;
     } else {
       resultExpEl.textContent = "";
